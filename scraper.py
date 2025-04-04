@@ -85,8 +85,10 @@ def get_sreality_data():
 
 def run():
     pozemky = get_sreality_data()
+    print(f"Nalezeno {len(pozemky)} pozemků")
     with open("pozemky.json", "w", encoding="utf-8") as f:
         json.dump(pozemky, f, ensure_ascii=False, indent=2)
+
 
 if __name__ == "__main__":
     run()
