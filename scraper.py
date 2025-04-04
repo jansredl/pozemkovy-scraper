@@ -37,7 +37,7 @@ def get_sreality_data():
         "region_entity_id": 0,
         "per_page": 20,
         "tms": int(datetime.now().timestamp()),
-        "price_to": 1000000,
+        "price_to": 2000000,
         "offer_type": "sale",
         "page": 1
     }
