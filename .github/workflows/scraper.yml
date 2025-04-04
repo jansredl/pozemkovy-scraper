@@ -19,11 +19,12 @@ jobs:
       - name: Spuštění scraperu
         run: python scraper.py
       - name: Nahrání na FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4
+        uses: AEnterprise/ftp-deploy@v1.0.1
         with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASS }}
+          ftp-server: ${{ secrets.FTP_HOST }}
+          ftp-username: ${{ secrets.FTP_USER }}
+          ftp-password: ${{ secrets.FTP_PASS }}
           local-dir: ./
-          server-dir: /www/pozemekdomice/
+          git-ftp-args: "--remote-root=/www/pozemekdomice/"
+
 
