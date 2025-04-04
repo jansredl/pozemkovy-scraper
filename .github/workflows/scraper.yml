@@ -2,7 +2,7 @@ name: Spustit scraper
 
 on:
   schedule:
-       - cron: "0 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -10,21 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Nastavit Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+
       - name: Instalace závislostí
         run: pip install -r requirements.txt
+
       - name: Spuštění scraperu
         run: python scraper.py
-      - name: Nahrání na FTP
-        uses: AEnterprise/ftp-deploy@v1.0.1
-        with:
-          ftp-server: ${{ secrets.FTP_HOST }}
-          ftp-username: ${{ secrets.FTP_USER }}
-          ftp-password: ${{ secrets.FTP_PASS }}
-          local-dir: ./
-          git-ftp-args: "--remote-root=/www/pozemekdomice/"
 
-
+      - name: Nahrání na FTP přes curl
+        run: |
+          curl -T pozemky.json ftp://${{ secrets.FTP_HOST }}/pozemekdomice/ \
+          --user ${{ secrets.FTP_USER }}:${{ secrets.FTP_PASS }}
