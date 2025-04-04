@@ -19,10 +19,10 @@ jobs:
       - name: Spuštění scraperu
         run: python scraper.py
       - name: Nahrání na FTP
-        uses: sebastianpopp/ftp-action@v2
+        uses: SamKirkland/FTP-Deploy-Action@4.3.4
         with:
-          host: ${{ secrets.FTP_HOST }}
-          user: ${{ secrets.FTP_USER }}
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
-          localDir: ./
-          remoteDir: /www/pozemekdomice/
+          local-dir: ./
+          server-dir: /www//pozemekdomice/
