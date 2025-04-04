@@ -32,12 +32,20 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 def scrape_sreality():
     results = []
     headers = {"User-Agent": "Mozilla/5.0"}
-    for page in range(1, 4):
+    for page in range(1, 2):  # jen první stránka pro debug
         url = f"https://www.sreality.cz/hledani/prodej/pozemky/stavebni-parcely?cena-do=2000000&strana={page}"
         response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, "html.parser")
+        html = response.text
 
+        # uložíme odpověď pro kontrolu
+        with open("debug.html", "w", encoding="utf-8") as f:
+            f.write(html)
+
+        soup = BeautifulSoup(html, "html.parser")
         listings = soup.select("div.property")
+
+        print(f"DEBUG: Na stránce nalezeno {len(listings)} položek s div.property")
+
         for listing in listings:
             try:
                 title_elem = listing.select_one("span.name")
