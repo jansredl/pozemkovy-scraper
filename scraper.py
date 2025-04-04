@@ -33,8 +33,8 @@ def get_sreality_data():
     query = {
         "category_main_cb": 3,
         "category_sub_cb": 6,
-        "region_entity_type": "municipality",
-        "region_entity_id": 0,
+        # Odebráno – hledání po celé ČR "region_entity_type": "municipality",
+        # Odebráno – hledání po celé ČR "region_entity_id": 0,
         "per_page": 20,
         "tms": int(datetime.now().timestamp()),
         "price_to": 2000000,
