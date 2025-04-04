@@ -33,7 +33,7 @@ def run():
     "odkaz": "https://www.sreality.cz/detail/test2",
     "zdroj": "sreality.cz",
     "datum_zverejneni": "2025-04-04",
-    "mobilni_domy_vhodne": false,
+    "mobilni_domy_vhodne": False,
     "vzdalenost_od": "Praha",
     "vzdalenost_km": 78.1
   },
