@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Pozemky do 1 milionu Kč</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; }
+    .item { border-bottom: 1px solid #ccc; margin-bottom: 20px; padding-bottom: 10px; }
+    .item h3 { margin: 0; font-size: 18px; }
+    .item p { margin: 5px 0; }
+    .item a { color: blue; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>Pozemky do 1 milionu Kč</h1>
+  <div id="list"></div>
+  <script>
+    let currentIndex = 0;
+    let data = [];
+
+    async function loadData() {
+      const res = await fetch('pozemky.json');
+      data = await res.json();
+      loadNextItems();
+      window.addEventListener('scroll', handleScroll);
+    }
+
+    function handleScroll() {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 100) {
+        loadNextItems();
+      }
+    }
+
+    function loadNextItems() {
+      const container = document.getElementById('list');
+      for (let i = 0; i < 10 && currentIndex < data.length; i++, currentIndex++) {
+        const item = data[currentIndex];
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <h3>${item.nazev}</h3>
+          <p>${item.lokalita} | ${item.vymera ?? "?"} m² | ${item.cena} Kč</p>
+          <p><a href="${item.odkaz}" target="_blank">Otevřít inzerát</a></p>
+        `;
+        container.appendChild(div);
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
