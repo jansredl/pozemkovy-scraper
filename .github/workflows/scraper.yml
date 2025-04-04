@@ -24,6 +24,6 @@ jobs:
 
       - name: Nahrání na FTP přes curl
         run: |
-          curl -T pozemky.json ftp://${{ secrets.FTP_HOST }}/www/pozemekdomice/ \
+          curl -T pozemky.json ftp://${{ secrets.FTP_HOST }}/public_html/www/pozemekdomice/ \
           --user ${{ secrets.FTP_USER }}:${{ secrets.FTP_PASS }}
 
