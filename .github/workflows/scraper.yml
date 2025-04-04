@@ -19,10 +19,11 @@ jobs:
       - name: Spuštění scraperu
         run: python scraper.py
       - name: Nahrání na FTP
-        uses: SamKirkland/FTP-Deploy-Action@4.3.4
+        uses: SamKirkland/FTP-Deploy-Action@v4
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
           local-dir: ./
-          server-dir: /www//pozemekdomice/
+          server-dir: /www/pozemekdomice/
+
