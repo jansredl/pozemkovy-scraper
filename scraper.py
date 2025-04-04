@@ -1,6 +1,22 @@
+import requests
 import json
-from datetime import datetime
 import math
+from datetime import datetime
+from urllib.parse import urlencode
+
+START_CITY = "Neratovice"
+
+def get_coordinates(address):
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {"q": address, "format": "json", "limit": 1}
+        response = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+        data = response.json()
+        if data:
+            return float(data[0]["lat"]), float(data[0]["lon"])
+    except:
+        return None, None
+    return None, None
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     R = 6371
@@ -11,45 +27,64 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return round(R * c, 1)
 
+def get_sreality_data():
+    results = []
+    base_url = "https://www.sreality.cz/api/cs/v2/estates"
+    query = {
+        "category_main_cb": 3,
+        "category_sub_cb": 6,
+        "region_entity_type": "municipality",
+        "region_entity_id": 0,
+        "per_page": 20,
+        "tms": int(datetime.now().timestamp()),
+        "price_to": 1000000,
+        "offer_type": "sale",
+        "page": 1
+    }
+
+    for page in range(1, 4):
+        query["page"] = page
+        url = f"{base_url}?{urlencode(query)}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            break
+        data = response.json()["_embedded"]["estates"]
+        for item in data:
+            lokalita = item.get("locality", "").strip()
+            nazev = item.get("name", "").strip()
+            cena = item.get("price", 0)
+            vymera = item.get("land_area", 0)
+            odkaz = f'https://www.sreality.cz/detail/prodej/pozemek/{item.get("seo", {}).get("locality", "")}/{item.get("hash_id")}'
+            okres = item.get("region_tip", {}).get("name", "")
+            kraj = item.get("region", "")
+
+            lat, lon = get_coordinates(lokalita)
+            if lat and lon:
+                start_lat, start_lon = get_coordinates(START_CITY)
+                vzdalenost = haversine_distance(start_lat, start_lon, lat, lon)
+            else:
+                vzdalenost = None
+
+            results.append({
+                "nazev": nazev,
+                "lokalita": lokalita,
+                "cena": cena,
+                "vymera": vymera,
+                "odkaz": odkaz,
+                "zdroj": "sreality.cz",
+                "datum_zverejneni": datetime.today().strftime("%Y-%m-%d"),
+                "okres": okres,
+                "kraj": kraj,
+                "lat": lat,
+                "lon": lon,
+                "vzdalenost_od": START_CITY,
+                "vzdalenost_km": vzdalenost
+            })
+    return results
+
 def run():
-    pozemky = [
-  {
-    "nazev": "Stavební pozemek u lesa",
-    "lokalita": "Praha - západ, Jílové",
-    "cena": 980000,
-    "vymera": 612,
-    "odkaz": "https://www.sreality.cz/detail/test1",
-    "zdroj": "sreality.cz",
-    "datum_zverejneni": "2025-04-04",
-    "mobilni_domy_vhodne": True,
-    "vzdalenost_od": "Praha",
-    "vzdalenost_km": 20.3
-  },
-  {
-    "nazev": "Rovinatý pozemek 500 m²",
-    "lokalita": "Plzeň - sever, Kaznějov",
-    "cena": 899000,
-    "vymera": 500,
-    "odkaz": "https://www.sreality.cz/detail/test2",
-    "zdroj": "sreality.cz",
-    "datum_zverejneni": "2025-04-04",
-    "mobilni_domy_vhodne": False,
-    "vzdalenost_od": "Praha",
-    "vzdalenost_km": 78.1
-  },
-  {
-    "nazev": "Klidný pozemek pro tiny house",
-    "lokalita": "Vysočina, Žďár nad Sázavou",
-    "cena": 750000,
-    "vymera": 450,
-    "odkaz": "https://www.sreality.cz/detail/test3",
-    "zdroj": "sreality.cz",
-    "datum_zverejneni": "2025-04-04",
-    "mobilni_domy_vhodne": True,
-    "vzdalenost_od": "Praha",
-    "vzdalenost_km": 122.0
-  }
-]
+    pozemky = get_sreality_data()
     with open("pozemky.json", "w", encoding="utf-8") as f:
         json.dump(pozemky, f, ensure_ascii=False, indent=2)
 
