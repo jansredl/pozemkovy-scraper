@@ -21,7 +21,7 @@ def run():
     "odkaz": "https://www.sreality.cz/detail/test1",
     "zdroj": "sreality.cz",
     "datum_zverejneni": "2025-04-04",
-    "mobilni_domy_vhodne": true,
+    "mobilni_domy_vhodne": True,
     "vzdalenost_od": "Praha",
     "vzdalenost_km": 20.3
   },
@@ -45,7 +45,7 @@ def run():
     "odkaz": "https://www.sreality.cz/detail/test3",
     "zdroj": "sreality.cz",
     "datum_zverejneni": "2025-04-04",
-    "mobilni_domy_vhodne": true,
+    "mobilni_domy_vhodne": True,
     "vzdalenost_od": "Praha",
     "vzdalenost_km": 122.0
   }
