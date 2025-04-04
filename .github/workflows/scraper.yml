@@ -1,0 +1,28 @@
+name: Spustit scraper
+
+on:
+  schedule:
+       - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Nastavit Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Instalace závislostí
+        run: pip install -r requirements.txt
+      - name: Spuštění scraperu
+        run: python scraper.py
+      - name: Nahrání na FTP
+        uses: sebastianpopp/ftp-action@v2
+        with:
+          host: ${{ secrets.FTP_HOST }}
+          user: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
+          localDir: ./
+          remoteDir: /www/
