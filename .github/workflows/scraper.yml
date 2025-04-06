@@ -26,4 +26,5 @@ jobs:
 
     - name: Upload pozemky.json to FTP
       run: |
-        curl -T pozemky.json "ftp://${{ secrets.FTP_SERVER }}/public_html/www/pozemekdomice/" --user "${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }}"
+        curl -T pozemky.json "ftp://${{ secrets.FTP_SERVER }}/\
+        --user "${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }}"
