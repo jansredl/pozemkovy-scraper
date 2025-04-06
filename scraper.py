@@ -2,160 +2,119 @@
 import requests
 from bs4 import BeautifulSoup
 import json
-from datetime import datetime
 import re
-from math import radians, sin, cos, sqrt, atan2
+from math import radians, cos, sin, sqrt, atan2
+from datetime import datetime
 import time
 
-START_CITY = "Neratovice"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
+NERATOVICE_LAT = 50.2597
+NERATOVICE_LON = 14.5162
 
-def get_coordinates(address):
+def geocode_location(location):
     try:
-        url = "https://nominatim.openstreetmap.org/search"
-        params = {"q": address, "format": "json", "limit": 1}
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, params=params, headers=headers)
-        data = response.json()
+        url = f"https://nominatim.openstreetmap.org/search"
+        params = {"q": location, "format": "json", "addressdetails": 1}
+        res = requests.get(url, params=params, headers=HEADERS)
+        res.raise_for_status()
+        data = res.json()
         if data:
             return float(data[0]["lat"]), float(data[0]["lon"])
-    except:
+    except Exception:
         return None, None
     return None, None
 
-def haversine_distance(lat1, lon1, lat2, lon2):
+def haversine(lat1, lon1, lat2, lon2):
     R = 6371
     dlat = radians(lat2 - lat1)
     dlon = radians(lon2 - lon1)
     a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-    return round(R * c, 1)
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
-def extract_location_from_text(text):
-    # Získání obce z textu odkazu
-    parts = text.split(" ")
+def extract_details_from_detail_page(url):
     try:
-        if "Kč" in parts[-1]:
-            cena_index = parts.index("Kč")
-            return parts[cena_index - 1]
+        r = requests.get(url, headers=HEADERS)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        text = soup.get_text(" ", strip=True)
+        okres_match = re.search(r"okres\s+([\w\s]+)", text, re.IGNORECASE)
+        katastr_match = re.search(r"katastr[a-z]*\s+územ[íi]\s*([\w\s\-]+)", text, re.IGNORECASE)
+        site_info = {
+            "elektrina": "elektřin" in text,
+            "voda": "vodovod" in text or "voda" in text,
+            "kanalizace": "kanalizace" in text,
+            "plyn": "plyn" in text,
+            "cov": "čov" in text or "čistírna" in text
+        }
+
+        return {
+            "okres": okres_match.group(1).strip() if okres_match else None,
+            "katastr": katastr_match.group(1).strip() if katastr_match else None,
+            "site": site_info
+        }
     except:
-        return None
-    return None
-
-def extract_location_from_detail(detail_html):
-    soup = BeautifulSoup(detail_html, "html.parser")
-    text = soup.get_text(separator=" ", strip=True)
-
-    # Okres (např. "okres Trutnov")
-    okres = None
-    match = re.search(r"okres\s+([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž\-\s]+)", text)
-    if match:
-        okres = match.group(1).strip()
-
-    # Inženýrské sítě
-    site_keys = {
-        "elektřina": ["elektřina", "přípojka elektřiny"],
-        "voda": ["vodovod", "voda"],
-        "kanalizace": ["kanalizace"],
-        "čov": ["čistička", "ČOV", "čistírna odpadních vod"],
-        "plyn": ["plyn"]
-    }
-
-    site_info = []
-    for key, phrases in site_keys.items():
-        if any(phrase.lower() in text.lower() for phrase in phrases):
-            site_info.append(key)
-
-    # Katastr
-    katastr = None
-    k_match = re.search(r"část obce\s+(\w[\w\s\-]+)", text)
-    if k_match:
-        katastr = k_match.group(1).strip()
-
-    return okres, site_info, katastr
-
-def extract_data(text):
-    vymera = None
-    cena = None
-    fotky = None
-
-    fotky_match = re.search(r"(\d+)\s+fotografi", text)
-    if fotky_match:
-        fotky = int(fotky_match.group(1))
-
-    vymera_match = re.search(r"(\d+)\s*m²", text)
-    if vymera_match:
-        vymera = int(vymera_match.group(1))
-
-    cena_match = re.search(r"(\d[\d\s]+)\s*Kč", text)
-    if cena_match:
-        cena = int(re.sub(r"\D", "", cena_match.group(1)))
-
-    return fotky, vymera, cena
+        return {}
 
 def scrape_sreality():
     results = []
-    headers = {"User-Agent": "Mozilla/5.0"}
     for page in range(1, 3):
-        url = f"https://www.sreality.cz/hledani/prodej/pozemky/stavebni-parcely?cena-do=2000000&strana={page}"
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, "html.parser")
+        url = f"https://www.sreality.cz/hledani/prodej/pozemky/bydleni?cena-do=2000000&strana={page}"
+        r = requests.get(url, headers=HEADERS)
+        soup = BeautifulSoup(r.text, "html.parser")
+        listings = soup.select("div.property")
 
-        links = soup.select('a[href^="/detail/prodej/"]')
-        seen = set()
-
-        for link in links:
-            href = link.get("href")
-            if href in seen:
+        for listing in listings:
+            text = listing.get_text(" ", strip=True)
+            odkaz_tag = listing.find("a", href=True)
+            if not odkaz_tag:
                 continue
-            seen.add(href)
+            odkaz = "https://www.sreality.cz" + odkaz_tag["href"]
 
-            odkaz = "https://www.sreality.cz" + href
-            text = link.get_text(separator=" ", strip=True)
+            vymera_match = re.search(r"(\d+)\s*m²", text)
+            cena_match = re.search(r"(\d+[\s\d]*)\s*Kč", text)
+            lokalita_match = re.search(r"([A-ZÁ-Ž][\w\s\-]+)(?=\s*\|)", text)
 
-            fotky, vymera, cena = extract_data(text)
-            obec = extract_location_from_text(text)
+            vymera = int(vymera_match.group(1)) if vymera_match else None
+            cena = int(cena_match.group(1).replace(" ", "")) if cena_match else None
+            lokalita = lokalita_match.group(1).strip() if lokalita_match else None
 
-            try:
-                detail_res = requests.get(odkaz, headers=headers)
-                okres, site_info, katastr = extract_location_from_detail(detail_res.text)
-                time.sleep(1)
-            except:
-                okres, site_info, katastr = None, [], None
+            detail = extract_details_from_detail_page(odkaz)
+            okres = detail.get("okres")
+            obec = lokalita
 
-            # doplnění
-            lokalita = obec
-            if okres and okres.lower() not in obec.lower():
-                lokalita = f"{obec}, okres {okres}"
+            if okres and obec and okres.lower() not in obec.lower():
+                obec = f"{obec}, okres {okres}"
 
-            lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
+            lat, lon = geocode_location(obec or lokalita)
             vzdalenost = None
             if lat and lon:
-                start_lat, start_lon = get_coordinates(START_CITY)
-                vzdalenost = haversine_distance(start_lat, start_lon, lat, lon)
+                vzdalenost = round(haversine(NERATOVICE_LAT, NERATOVICE_LON, lat, lon), 1)
 
             results.append({
                 "lokalita": lokalita,
+                "okres": okres,
+                "obec": obec,
                 "cena": cena,
                 "vymera": vymera,
-                "fotky": fotky,
                 "odkaz": odkaz,
                 "zdroj": "sreality.cz",
-                "datum_zverejneni": datetime.today().strftime("%Y-%m-%d"),
+                "datum_zverejneni": datetime.now().strftime("%Y-%m-%d"),
                 "lat": lat,
                 "lon": lon,
-                "vzdalenost_od": START_CITY,
+                "vzdalenost_od": "Neratovice",
                 "vzdalenost_km": vzdalenost,
-                "okres": okres,
-                "inzenyrske_site": site_info,
-                "katastr": katastr
+                "katastr": detail.get("katastr"),
+                "site": detail.get("site"),
             })
+
+            time.sleep(1.2)  # avoid hammering servers
     return results
 
 def run():
-    pozemky = scrape_sreality()
-    print(f"Nalezeno {len(pozemky)} pozemků")
+    data = scrape_sreality()
     with open("pozemky.json", "w", encoding="utf-8") as f:
-        json.dump(pozemky, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-if __name__ == "__main__":
-    run()
+run()
