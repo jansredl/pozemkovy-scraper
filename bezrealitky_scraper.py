@@ -1,68 +1,34 @@
-
 import requests
 from bs4 import BeautifulSoup
-import re
-from datetime import datetime
+import json
 import time
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
-
-def parse_price(text):
-    match = re.search(r"(\d[\d\s]*)\s*Kč", text)
-    if match:
-        return int(match.group(1).replace(" ", ""))
-    return None
-
-def parse_area(text):
-    match = re.search(r"(\d+)\s*m²", text)
-    if match:
-        return int(match.group(1))
-    return None
+from datetime import datetime
 
 def scrape_bezrealitky():
-    base_url = "https://www.bezrealitky.cz"
-    search_url = base_url + "/vypis/nabidka-prodej/pozemek"
-    page = 1
     results = []
+    base_url = "https://www.bezrealitky.cz/vypis/nabidka-prodej/pozemek/stredocechy?cena-najem-od=0&cena-najem-do=1000000&strana="
 
-    while True:
+    for page in range(1, 51):  # předpoklad max 50 stránek, upravíme později podle reálného počtu
         print(f"📄 Bezrealitky.cz – stránka {page}")
-        url = f"{search_url}?page={page}&priceTo=1000000"
-        res = requests.get(url, headers=HEADERS)
-        soup = BeautifulSoup(res.text, "html.parser")
+        url = base_url + str(page)
+        r = requests.get(url, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-        cards = soup.select("div.property-list__item")
-        if not cards:
-            break  # konec
+        offers = soup.select("a.PropertyPreview-Preview__link")
+        if not offers:
+            print("⛔ Konec výsledků.")
+            break
 
-        for card in cards:
-            title_el = card.select_one(".property-title")
-            if not title_el:
-                continue
+        for offer in offers:
+            href = offer.get("href")
+            full_url = f"https://www.bezrealitky.cz{href}"
 
-            title = title_el.get_text(strip=True)
-            link = card.select_one("a")["href"]
-            full_link = base_url + link
-
-            price_el = card.select_one(".property-price__price")
-            price = parse_price(price_el.get_text(strip=True)) if price_el else None
-
-            area = parse_area(title)
-
-            locality = card.select_one(".property-location")
-            lokalita = locality.get_text(strip=True) if locality else None
-
-            if not (lokalita and price and area):
-                continue
-
+            # Zjednodušené parsování
             results.append({
-                "lokalita": lokalita,
-                "vymera": area,
-                "cena": price,
+                "lokalita": "Neznámá",
+                "vymera": None,
+                "cena": None,
                 "okres": None,
-                "kraj": None,
                 "lat": None,
                 "lon": None,
                 "vzdalenost_od": "Neratovice",
@@ -72,18 +38,17 @@ def scrape_bezrealitky():
                 "sit_cov": None,
                 "sit_kanalizace": None,
                 "sit_elektrina": None,
-                "mobilni_dum_vhodne": any(kw in title.lower() for kw in ["mobilní", "mobilheim", "tiny"]),
+                "mobilni_dum_vhodne": None,
                 "cislo_parcely": None,
                 "katastr": None,
                 "uzemni_plan_url": None,
                 "fotky": None,
-                "odkaz": full_link,
+                "odkaz": full_url,
                 "zdroj": "bezrealitky.cz",
                 "datum_zverejneni": datetime.today().strftime("%Y-%m-%d")
             })
 
-        page += 1
-        time.sleep(1.0)
+        time.sleep(1)
 
-    print(f"✅ Bezrealitky.cz – nalezeno {len(results)} inzerátů")
+    print(f"✅ Hotovo – Bezrealitky: nalezeno {len(results)} inzerátů")
     return results
