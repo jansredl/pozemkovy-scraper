@@ -36,17 +36,10 @@ def get_detail_info(url):
         text = soup.get_text(" ", strip=True).lower()
 
         okres_match = re.search(r"okres\s+([a-zá-ž\-\s]+)", text)
-        katastr_match = re.search(r"katastr[a-z]*\s+územ[íi]\s*([a-zá-ž\-\s]+)", text)
-        parcela_match = re.search(r"parcela\s*č(?:\.|íslo)?\s*([\w\-/]+)", text)
-        uzemni_plan_match = re.search(r"(https?://[\w./-]*uzemni[\w./-]*\.pdf)", text)
-
-        mobilni = any(x in text for x in ["mobilní dům", "mobilheim", "tiny house", "mobilní domy", "mobilheimy"])
+        mobilni = any(x in text for x in ["mobilní dům", "mobilheim", "tiny house", "modulární", "mobilní domy"])
 
         return {
             "okres": okres_match.group(1).strip().title() if okres_match else None,
-            "katastr": katastr_match.group(1).strip().title() if katastr_match else None,
-            "cislo_parcely": parcela_match.group(1).strip() if parcela_match else None,
-            "uzemni_plan_url": uzemni_plan_match.group(1) if uzemni_plan_match else None,
             "sit_voda": "voda" in text or "vodovod" in text,
             "sit_cov": "čov" in text or "čistírna" in text,
             "sit_kanalizace": "kanalizace" in text,
@@ -57,12 +50,10 @@ def get_detail_info(url):
         print(f"⚠️ Chyba při načítání detailu: {e}")
         return {}
 
-def scrape_sreality():
+def scrape():
     results = []
     seen = set()
-
-    for page in range(1, 29):  # 28 stránek
-        print(f"📄 Sreality.cz – stránka {page}")
+    for page in range(1, 3):  # Pouze první 2 stránky pro test
         url = f"https://www.sreality.cz/hledani/prodej/pozemky/stavebni-parcely?cena-do=1000000&strana={page}"
         r = requests.get(url, headers=HEADERS)
         soup = BeautifulSoup(r.text, "html.parser")
@@ -73,20 +64,19 @@ def scrape_sreality():
             if href in seen:
                 continue
             seen.add(href)
-
             full_url = "https://www.sreality.cz" + href
-            print(f"➡️ Zpracovávám: {full_url}")
+            print(f"➡️ Zpracovávám inzerát: {full_url}")
             text = a.get_text(" ", strip=True)
 
             vymera_match = re.search(r"(\d+)\s*m²", text)
             cena_match = re.search(r"(\d[\d\s\xa0]*)\s*Kč", text)
-            lokalita_match = re.search(r"(\d+\s*m²\s+)?(.+?)\s+\d", text)
+            lokalita_match = re.search(r"\d+\s*m²\s+(.+?)\s+\d", text)
             fotky_match = re.search(r"(\d+)\s+fotografi", text)
 
             try:
                 vymera = int(vymera_match.group(1)) if vymera_match else None
                 cena = int(re.sub(r"\s+", "", cena_match.group(1))) if cena_match else None
-                lokalita = lokalita_match.group(2).strip() if lokalita_match else None
+                lokalita = lokalita_match.group(1).strip() if lokalita_match else None
             except Exception as e:
                 print(f"❌ Chyba při parsování čísel: {e}")
                 continue
@@ -97,7 +87,6 @@ def scrape_sreality():
 
             fotky = int(fotky_match.group(1)) if fotky_match else None
             detail = get_detail_info(full_url)
-
             geotext = f"{lokalita}, {detail.get('okres')}, Česká republika" if detail.get('okres') else f"{lokalita}, Česká republika"
             lat, lon = geocode(geotext)
             vzdalenost = haversine(NERATOVICE_LAT, NERATOVICE_LON, lat, lon) if lat and lon else None
@@ -118,9 +107,6 @@ def scrape_sreality():
                 "sit_kanalizace": detail.get("sit_kanalizace"),
                 "sit_elektrina": detail.get("sit_elektrina"),
                 "mobilni_dum_vhodne": detail.get("mobilni_dum_vhodne"),
-                "cislo_parcely": detail.get("cislo_parcely"),
-                "katastr": detail.get("katastr"),
-                "uzemni_plan_url": detail.get("uzemni_plan_url"),
                 "fotky": fotky,
                 "odkaz": full_url,
                 "zdroj": "sreality.cz",
@@ -128,6 +114,9 @@ def scrape_sreality():
             })
 
             time.sleep(1.2)
+    print(f"✅ Hotovo – nalezeno {len(results)} pozemků")
+    with open("pozemky_preview.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ Hotovo – Sreality: nalezeno {len(results)} pozemků")
-    return results
+if __name__ == "__main__":
+    scrape()
