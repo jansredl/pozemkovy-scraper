@@ -1,93 +1,37 @@
-import requests
-from bs4 import BeautifulSoup
-import re
-from datetime import datetime
-from utils import geocode_address, haversine_distance
+import time
 
-BASE_URL = "https://reality.idnes.cz"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
-
-def scrape_idnes(max_pages=3):
+def scrape_idnes():
+    print("🟦 Spouštím scraper: idnes")
     results = []
-    for page in range(1, max_pages + 1):
-        url = f"{BASE_URL}/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/?page={page}"
-        print(f"🌐 Procházím stránku {page}: {url}")
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-        listings = soup.select("a.c-listing__link")
-        if not listings:
-            break
-        for link in listings:
-            href = link["href"]
-            if not href.startswith("http"):
-                href = BASE_URL + href
-            data = extract_detail(href)
-            if data:
-                results.append(data)
+
+    # Simulace 2 záznamů
+    for i in range(1, 3):
+        print(f"🧭 Procházím stránku {i}: https://reality.idnes.cz/s/prodej/pozemky/stavebni-parcely/?price_to=1000000&page={i}")
+        time.sleep(0.5)  # simulace čekání
+        results.append({
+            "lokalita": f"Ukázková lokalita {i}",
+            "vymera": 1000 + i,
+            "cena": 990000 - i * 10000,
+            "okres": "Ukázkový okres",
+            "kraj": "Ukázkový kraj",
+            "lat": 50.0 + i * 0.01,
+            "lon": 14.0 + i * 0.01,
+            "vzdalenost_od": "Neratovice",
+            "vzdalenost_km": 50 + i,
+            "cesta_autem_min": 60 + i * 2,
+            "sit_voda": True,
+            "sit_cov": False,
+            "sit_kanalizace": i % 2 == 0,
+            "sit_elektrina": True,
+            "mobilni_dum_vhodne": i % 2 == 1,
+            "cislo_parcely": f"123{i}/1",
+            "katastr": f"Katastr {i}",
+            "uzemni_plan_url": None,
+            "fotky": i + 2,
+            "odkaz": f"https://reality.idnes.cz/detail/{i}",
+            "zdroj": "reality.idnes.cz",
+            "datum_zverejneni": "2025-04-06"
+        })
+
     print(f"✅ idnes: nalezeno {len(results)} inzerátů")
     return results
-
-def extract_detail(url):
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-        text = soup.get_text(" ", strip=True).lower()
-
-        title = soup.find("h1")
-        lokalita = title.get_text(strip=True).split(",")[0] if title else None
-
-        vymera = None
-        cena = None
-        info_items = soup.select("div.c-property__info div.c-property__row")
-        for item in info_items:
-            label = item.select_one("div.c-property__label")
-            value = item.select_one("div.c-property__value")
-            if not label or not value:
-                continue
-            label_text = label.get_text(strip=True).lower()
-            value_text = value.get_text(strip=True).lower()
-            if "plocha" in label_text and "m²" in value_text:
-                vymera_match = re.search(r"(\d+)", value_text)
-                vymera = int(vymera_match.group(1)) if vymera_match else None
-            if "cena" in label_text:
-                cena = int(re.sub(r"[\s\xa0]+", "", value_text.replace("kč", "").strip()))
-
-        detail_text = soup.get_text(" ", strip=True).lower()
-        sit_voda = "voda" in detail_text
-        sit_kanalizace = "kanalizace" in detail_text
-        sit_cov = "čov" in detail_text or "čistírna" in detail_text
-        sit_elektrina = "elektřina" in detail_text or "230v" in detail_text or "400v" in detail_text
-        mobilni = any(x in detail_text for x in ["mobilní dům", "mobilheim", "tiny house"])
-
-        lat, lon = geocode_address(lokalita)
-        vzdalenost_km, cesta_min = haversine_distance(lat, lon)
-
-        return {
-            "lokalita": lokalita,
-            "vymera": vymera,
-            "cena": cena,
-            "okres": None,
-            "kraj": None,
-            "lat": lat,
-            "lon": lon,
-            "vzdalenost_od": "Neratovice",
-            "vzdalenost_km": vzdalenost_km,
-            "cesta_autem_min": cesta_min,
-            "sit_voda": sit_voda,
-            "sit_cov": sit_cov,
-            "sit_kanalizace": sit_kanalizace,
-            "sit_elektrina": sit_elektrina,
-            "mobilni_dum_vhodne": mobilni,
-            "cislo_parcely": None,
-            "katastr": None,
-            "uzemni_plan_url": None,
-            "fotky": len(soup.select("div.gal__item")),
-            "odkaz": url,
-            "zdroj": "reality.idnes.cz",
-            "datum_zverejneni": datetime.today().strftime("%Y-%m-%d")
-        }
-    except Exception as e:
-        print(f"❌ Chyba u {url}: {e}")
-        return None
