@@ -30,36 +30,48 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return round(R * c, 1)
 
-def extract_location_from_detail(url):
-    headers = {"User-Agent": "Mozilla/5.0"}
+def extract_location_from_text(text):
+    # Získání obce z textu odkazu
+    parts = text.split(" ")
     try:
-        res = requests.get(url, headers=headers)
-        soup = BeautifulSoup(res.text, "html.parser")
+        if "Kč" in parts[-1]:
+            cena_index = parts.index("Kč")
+            return parts[cena_index - 1]
+    except:
+        return None
+    return None
 
-        h2 = soup.select_one("h2.property-title__location")
-        lokalita = h2.get_text(strip=True) if h2 else None
+def extract_location_from_detail(detail_html):
+    soup = BeautifulSoup(detail_html, "html.parser")
+    text = soup.get_text(separator=" ", strip=True)
 
-        if not lokalita:
-            print(f"❌ Lokalita nenalezena v H2 pro {url}")
+    # Okres (např. "okres Trutnov")
+    okres = None
+    match = re.search(r"okres\s+([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž\-\s]+)", text)
+    if match:
+        okres = match.group(1).strip()
 
-        full_text = soup.get_text(separator=" ", strip=True)
+    # Inženýrské sítě
+    site_keys = {
+        "elektřina": ["elektřina", "přípojka elektřiny"],
+        "voda": ["vodovod", "voda"],
+        "kanalizace": ["kanalizace"],
+        "čov": ["čistička", "ČOV", "čistírna odpadních vod"],
+        "plyn": ["plyn"]
+    }
 
-        okres_match = re.search(r"okres\s+([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž\-\s]+)", full_text)
-        if okres_match:
-            okres = okres_match.group(1).strip()
-            if lokalita and okres.lower() not in lokalita.lower():
-                lokalita += f", okres {okres}"
-            elif not lokalita:
-                lokalita = f"okres {okres}"
-                print(f"⚠️ Lokalita fallback pouze na okres: {lokalita} ({url})")
-        elif not lokalita:
-            print(f"❌ Nepodařilo se zjistit žádnou lokalitu pro {url}")
+    site_info = []
+    for key, phrases in site_keys.items():
+        if any(phrase.lower() in text.lower() for phrase in phrases):
+            site_info.append(key)
 
-        lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
-        return lokalita, lat, lon
-    except Exception as e:
-        print(f"❌ Chyba při zpracování {url}: {e}")
-        return None, None, None
+    # Katastr
+    katastr = None
+    k_match = re.search(r"část obce\s+(\w[\w\s\-]+)", text)
+    if k_match:
+        katastr = k_match.group(1).strip()
+
+    return okres, site_info, katastr
 
 def extract_data(text):
     vymera = None
@@ -101,9 +113,21 @@ def scrape_sreality():
             text = link.get_text(separator=" ", strip=True)
 
             fotky, vymera, cena = extract_data(text)
-            lokalita, lat, lon = extract_location_from_detail(odkaz)
-            time.sleep(1)
+            obec = extract_location_from_text(text)
 
+            try:
+                detail_res = requests.get(odkaz, headers=headers)
+                okres, site_info, katastr = extract_location_from_detail(detail_res.text)
+                time.sleep(1)
+            except:
+                okres, site_info, katastr = None, [], None
+
+            # doplnění
+            lokalita = obec
+            if okres and okres.lower() not in obec.lower():
+                lokalita = f"{obec}, okres {okres}"
+
+            lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
             vzdalenost = None
             if lat and lon:
                 start_lat, start_lon = get_coordinates(START_CITY)
@@ -120,7 +144,10 @@ def scrape_sreality():
                 "lat": lat,
                 "lon": lon,
                 "vzdalenost_od": START_CITY,
-                "vzdalenost_km": vzdalenost
+                "vzdalenost_km": vzdalenost,
+                "okres": okres,
+                "inzenyrske_site": site_info,
+                "katastr": katastr
             })
     return results
 
