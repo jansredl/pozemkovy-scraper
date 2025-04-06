@@ -36,21 +36,29 @@ def extract_location_from_detail(url):
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Primární extrakce z h2
         h2 = soup.select_one("h2.property-title__location")
         lokalita = h2.get_text(strip=True) if h2 else None
 
-        # Hledání "okres XYZ" z textu stránky
+        if not lokalita:
+            print(f"❌ Lokalita nenalezena v H2 pro {url}")
+
         full_text = soup.get_text(separator=" ", strip=True)
+
         okres_match = re.search(r"okres\s+([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž\-\s]+)", full_text)
         if okres_match:
             okres = okres_match.group(1).strip()
             if lokalita and okres.lower() not in lokalita.lower():
                 lokalita += f", okres {okres}"
+            elif not lokalita:
+                lokalita = f"okres {okres}"
+                print(f"⚠️ Lokalita fallback pouze na okres: {lokalita} ({url})")
+        elif not lokalita:
+            print(f"❌ Nepodařilo se zjistit žádnou lokalitu pro {url}")
 
         lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
         return lokalita, lat, lon
-    except:
+    except Exception as e:
+        print(f"❌ Chyba při zpracování {url}: {e}")
         return None, None, None
 
 def extract_data(text):
@@ -93,7 +101,6 @@ def scrape_sreality():
             text = link.get_text(separator=" ", strip=True)
 
             fotky, vymera, cena = extract_data(text)
-
             lokalita, lat, lon = extract_location_from_detail(odkaz)
             time.sleep(1)
 
