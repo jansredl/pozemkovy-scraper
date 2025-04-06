@@ -87,7 +87,9 @@ def scrape():
         if not (lokalita and cena and vymera):
             continue  # povinné pole chybí
 
-        lat, lon = geocode(lokalita)
+        # Geolokační dotaz s fallbackem
+        geotext = f"{lokalita}, {detail.get('okres')}, Česká republika" if detail.get('okres') else f"{lokalita}, Česká republika"
+        lat, lon = geocode(geotext)
         vzdalenost = haversine(NERATOVICE_LAT, NERATOVICE_LON, lat, lon) if lat and lon else None
 
         detail = get_detail_info(full_url)
