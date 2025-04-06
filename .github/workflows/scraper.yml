@@ -1,29 +1,37 @@
+
 name: Spustit scraper
 
 on:
   schedule:
-    - cron: "0 * * * *"
-  workflow_dispatch:
+    - cron: '0 * * * *'  # každou hodinu
+  workflow_dispatch:     # manuální spuštění
 
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+    - name: Checkout repozitáře
+      uses: actions/checkout@v3
 
-      - name: Nastavit Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+    - name: Nastavit Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
 
-      - name: Instalace závislostí
-        run: pip install -r requirements.txt
+    - name: Instalace požadavků (pokud bude potřeba)
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4
 
-      - name: Spuštění scraperu
-        run: python scraper.py
+    - name: Spuštění scraperu
+      run: python scraper_final.py
 
-      - name: Nahrání na FTP přes curl
-        run: |
-          curl -T pozemky.json ftp://${{ secrets.FTP_HOST }}/ \
-          --user ${{ secrets.FTP_USER }}:${{ secrets.FTP_PASS }}
-
+    - name: Upload výsledného souboru (FTP)
+      uses: sebastianpopp/ftp-action@v2
+      with:
+        host: ${{ secrets.FTP_HOST }}
+        user: ${{ secrets.FTP_USER }}
+        password: ${{ secrets.FTP_PASS }}
+        localDir: ./
+        remoteDir: /public_html/www/pozemekdomice/
