@@ -36,20 +36,24 @@ def extract_from_detail(url):
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # 🧠 Primární metoda: skript s JSON daty
+        # 1️⃣ Primární metoda: JSON data
         script_tag = soup.find("script", type="application/json")
         if script_tag:
-            json_text = script_tag.string.strip()
-            data = json.loads(json_text)
-            lat = data.get("property", {}).get("gps", {}).get("lat")
-            lon = data.get("property", {}).get("gps", {}).get("lon")
-            loc = data.get("property", {}).get("locality", {})
-            lokalita = loc.get("municipality")
-            if loc.get("district"):
-                lokalita += f", okres {loc.get('district')}"
-            return lokalita, lat, lon
+            try:
+                json_text = script_tag.string.strip()
+                data = json.loads(json_text)
+                lat = data.get("property", {}).get("gps", {}).get("lat")
+                lon = data.get("property", {}).get("gps", {}).get("lon")
+                loc = data.get("property", {}).get("locality", {})
+                lokalita = loc.get("municipality")
+                if loc.get("district"):
+                    lokalita += f", okres {loc.get('district')}"
+                if lokalita:
+                    return lokalita, lat, lon
+            except:
+                pass  # když JSON selže, přejdeme dál
 
-        # 🛑 Záloha: zkusit získat adresu z H2 a geokódovat
+        # 2️⃣ Fallback: H2 s lokalitou (např. "Sýkořice")
         h2 = soup.select_one("h2.property-title__location")
         if h2:
             fallback_address = h2.get_text(strip=True)
