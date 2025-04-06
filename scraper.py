@@ -36,13 +36,26 @@ def extract_from_detail(url):
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Extrahuj adresu
-        address_tag = soup.select_one("h2.property-title__location")
-        if address_tag:
-            return address_tag.get_text(strip=True)
+        # Hledáme skript s JSON daty
+        script_tag = soup.find("script", type="application/json")
+        if script_tag:
+            json_text = script_tag.string.strip()
+            data = json.loads(json_text)
+
+            # GPS souřadnice (pokud existují)
+            lat = data.get("property", {}).get("gps", {}).get("lat")
+            lon = data.get("property", {}).get("gps", {}).get("lon")
+
+            # Přesná lokalita z detailu
+            loc = data.get("property", {}).get("locality", {})
+            lokalita = loc.get("municipality")
+            if loc.get("district"):
+                lokalita += f", okres {loc.get('district')}"
+
+            return lokalita, lat, lon
     except:
-        return None
-    return None
+        return None, None, None
+    return None, None, None
 
 def extract_data(text):
     vymera = None
@@ -85,11 +98,10 @@ def scrape_sreality():
 
             fotky, vymera, cena = extract_data(text)
 
-            # 🆕 z detailu načteme lokalitu
-            detail_lokalita = extract_from_detail(odkaz)
-            time.sleep(1)  # respektuj limity
+            # 🆕 z detailu extrahujeme lokalitu + GPS
+            detail_lokalita, lat, lon = extract_from_detail(odkaz)
+            time.sleep(1)
 
-            lat, lon = get_coordinates(detail_lokalita) if detail_lokalita else (None, None)
             vzdalenost = None
             if lat and lon:
                 start_lat, start_lon = get_coordinates(START_CITY)
