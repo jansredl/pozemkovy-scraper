@@ -29,6 +29,36 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return round(R * c, 1)
 
+def extract_data(text):
+    # Výchozí hodnoty
+    vymera = None
+    cena = None
+    lokalita = None
+    fotky = None
+
+    # Fotky
+    fotky_match = re.search(r"(\d+)\s+fotografi", text)
+    if fotky_match:
+        fotky = int(fotky_match.group(1))
+
+    # Výměra
+    vymera_match = re.search(r"(\d+)\s*m²", text)
+    if vymera_match:
+        vymera = int(vymera_match.group(1))
+
+    # Cena
+    cena_match = re.search(r"(\d[\d\s]+)\s*Kč", text)
+    if cena_match:
+        cena = int(re.sub(r"\D", "", cena_match.group(1)))
+
+    # Lokalita – text mezi "m²" a "Kč"
+    if vymera_match and cena_match:
+        start = vymera_match.end()
+        end = cena_match.start()
+        lokalita = text[start:end].strip()
+
+    return fotky, vymera, cena, lokalita
+
 def scrape_sreality():
     results = []
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -49,16 +79,9 @@ def scrape_sreality():
             odkaz = "https://www.sreality.cz" + href
             text = link.get_text(separator=" ", strip=True)
 
-            cena_match = re.search(r"([\d\s]+)\s*Kč", text)
-            cena = int(re.sub(r"\D", "", cena_match.group(1))) if cena_match else None
+            fotky, vymera, cena, lokalita = extract_data(text)
 
-            vymera_match = re.search(r"(\d+)\s*m²", text)
-            vymera = int(vymera_match.group(1)) if vymera_match else None
-
-            lokalita_match = re.search(r"([\wěščřžýáíéúůĚŠČŘŽÝÁÍÉÚŮ\-\s]+)", text)
-            lokalita = lokalita_match.group(1).strip() if lokalita_match else "Neznámá lokalita"
-
-            lat, lon = get_coordinates(lokalita)
+            lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
             vzdalenost = None
             if lat and lon:
                 start_lat, start_lon = get_coordinates(START_CITY)
@@ -68,6 +91,7 @@ def scrape_sreality():
                 "lokalita": lokalita,
                 "cena": cena,
                 "vymera": vymera,
+                "fotky": fotky,
                 "odkaz": odkaz,
                 "zdroj": "sreality.cz",
                 "datum_zverejneni": datetime.today().strftime("%Y-%m-%d"),
