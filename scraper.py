@@ -56,16 +56,15 @@ def scrape_sreality():
             vymera = int(vymera_match.group(1)) if vymera_match else None
 
             lokalita_match = re.search(r"([\wěščřžýáíéúůĚŠČŘŽÝÁÍÉÚŮ\-\s]+)", text)
-            lokalita = lokalita_match.group(1).strip() if lokalita_match else None
+            lokalita = lokalita_match.group(1).strip() if lokalita_match else "Neznámá lokalita"
 
-            lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
+            lat, lon = get_coordinates(lokalita)
             vzdalenost = None
             if lat and lon:
                 start_lat, start_lon = get_coordinates(START_CITY)
                 vzdalenost = haversine_distance(start_lat, start_lon, lat, lon)
 
             results.append({
-                "nazev": "Pozemek",
                 "lokalita": lokalita,
                 "cena": cena,
                 "vymera": vymera,
