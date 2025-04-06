@@ -32,60 +32,51 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 def scrape_sreality():
     results = []
     headers = {"User-Agent": "Mozilla/5.0"}
-    for page in range(1, 2):  # jen první stránka pro debug
+    for page in range(1, 4):
         url = f"https://www.sreality.cz/hledani/prodej/pozemky/stavebni-parcely?cena-do=2000000&strana={page}"
         response = requests.get(url, headers=headers)
-        html = response.text
+        soup = BeautifulSoup(response.text, "html.parser")
 
-        # uložíme odpověď pro kontrolu
-        with open("debug.html", "w", encoding="utf-8") as f:
-            f.write(html)
+        links = soup.select('a[href^="/detail/prodej/"]')
+        seen = set()
 
-        soup = BeautifulSoup(html, "html.parser")
-        listings = soup.select("div.property")
-
-        print(f"DEBUG: Na stránce nalezeno {len(listings)} položek s div.property")
-
-        for listing in listings:
-            try:
-                title_elem = listing.select_one("span.name")
-                location_elem = listing.select_one("span.locality")
-                price_elem = listing.select_one("span.norm-price")
-                link_elem = listing.find("a", href=True)
-
-                if not all([title_elem, location_elem, price_elem, link_elem]):
-                    continue
-
-                nazev = title_elem.text.strip()
-                lokalita = location_elem.text.strip()
-                cena_str = price_elem.text.strip().replace(" ", "").replace("Kč", "")
-                cena = int(re.sub(r"\D", "", cena_str))
-                odkaz = "https://www.sreality.cz" + link_elem["href"]
-
-                vymera_match = re.search(r"(\d+)\s*m²", nazev)
-                vymera = int(vymera_match.group(1)) if vymera_match else None
-
-                lat, lon = get_coordinates(lokalita)
-                vzdalenost = None
-                if lat and lon:
-                    start_lat, start_lon = get_coordinates(START_CITY)
-                    vzdalenost = haversine_distance(start_lat, start_lon, lat, lon)
-
-                results.append({
-                    "nazev": nazev,
-                    "lokalita": lokalita,
-                    "cena": cena,
-                    "vymera": vymera,
-                    "odkaz": odkaz,
-                    "zdroj": "sreality.cz",
-                    "datum_zverejneni": datetime.today().strftime("%Y-%m-%d"),
-                    "lat": lat,
-                    "lon": lon,
-                    "vzdalenost_od": START_CITY,
-                    "vzdalenost_km": vzdalenost
-                })
-            except Exception:
+        for link in links:
+            href = link.get("href")
+            if href in seen:
                 continue
+            seen.add(href)
+
+            odkaz = "https://www.sreality.cz" + href
+            text = link.get_text(separator=" ", strip=True)
+
+            cena_match = re.search(r"([\d\s]+)\s*Kč", text)
+            cena = int(cena_match.group(1).replace(" ", "")) if cena_match else None
+
+            vymera_match = re.search(r"(\d+)\s*m²", text)
+            vymera = int(vymera_match.group(1)) if vymera_match else None
+
+            lokalita_match = re.search(r"([\wěščřžýáíéúůĚŠČŘŽÝÁÍÉÚŮ\-\s]+)", text)
+            lokalita = lokalita_match.group(1).strip() if lokalita_match else None
+
+            lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
+            vzdalenost = None
+            if lat and lon:
+                start_lat, start_lon = get_coordinates(START_CITY)
+                vzdalenost = haversine_distance(start_lat, start_lon, lat, lon)
+
+            results.append({
+                "nazev": "Pozemek",
+                "lokalita": lokalita,
+                "cena": cena,
+                "vymera": vymera,
+                "odkaz": odkaz,
+                "zdroj": "sreality.cz",
+                "datum_zverejneni": datetime.today().strftime("%Y-%m-%d"),
+                "lat": lat,
+                "lon": lon,
+                "vzdalenost_od": START_CITY,
+                "vzdalenost_km": vzdalenost
+            })
     return results
 
 def run():
