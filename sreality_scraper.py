@@ -120,3 +120,6 @@ def scrape():
 
 if __name__ == "__main__":
     scrape()
+
+def scrape_sreality():
+    return scrape()
