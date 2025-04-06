@@ -50,7 +50,7 @@ def scrape_sreality():
             text = link.get_text(separator=" ", strip=True)
 
             cena_match = re.search(r"([\d\s]+)\s*Kč", text)
-cena = int(re.sub(r"\\D", "", cena_match.group(1))) if cena_match else None
+            cena = int(re.sub(r"\D", "", cena_match.group(1))) if cena_match else None
 
             vymera_match = re.search(r"(\d+)\s*m²", text)
             vymera = int(vymera_match.group(1)) if vymera_match else None
