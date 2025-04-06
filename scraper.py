@@ -36,24 +36,27 @@ def extract_from_detail(url):
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Hledáme skript s JSON daty
+        # 🧠 Primární metoda: skript s JSON daty
         script_tag = soup.find("script", type="application/json")
         if script_tag:
             json_text = script_tag.string.strip()
             data = json.loads(json_text)
-
-            # GPS souřadnice (pokud existují)
             lat = data.get("property", {}).get("gps", {}).get("lat")
             lon = data.get("property", {}).get("gps", {}).get("lon")
-
-            # Přesná lokalita z detailu
             loc = data.get("property", {}).get("locality", {})
             lokalita = loc.get("municipality")
             if loc.get("district"):
                 lokalita += f", okres {loc.get('district')}"
-
             return lokalita, lat, lon
-    except:
+
+        # 🛑 Záloha: zkusit získat adresu z H2 a geokódovat
+        h2 = soup.select_one("h2.property-title__location")
+        if h2:
+            fallback_address = h2.get_text(strip=True)
+            lat, lon = get_coordinates(fallback_address)
+            return fallback_address, lat, lon
+
+    except Exception as e:
         return None, None, None
     return None, None, None
 
@@ -98,7 +101,6 @@ def scrape_sreality():
 
             fotky, vymera, cena = extract_data(text)
 
-            # 🆕 z detailu extrahujeme lokalitu + GPS
             detail_lokalita, lat, lon = extract_from_detail(odkaz)
             time.sleep(1)
 
