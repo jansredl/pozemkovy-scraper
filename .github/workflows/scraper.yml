@@ -1,30 +1,29 @@
-name: run-scraper
+name: run
 
 on:
   schedule:
-    - cron: '0 * * * *' # Spustí se každou hodinu
-  workflow_dispatch: # Lze spustit i ručně
+    - cron: '0 * * * *'  # Spouští se každou hodinu
+  workflow_dispatch:
 
 jobs:
-  run:
+  run-scraper:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-    - name: Run all scrapers and generate pozemky.json
-      run: python run_all_scrapers.py
+      - name: Run all scrapers and generate pozemky.json
+        run: python run_all_scrapers.py
 
-    - name: Upload pozemky.json to FTP
-      run: |
-        curl -T pozemky.json "ftp://${{ secrets.FTP_SERVER }}/\
-        --user "${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }}"
+      - name: Upload pozemky.json to FTP
+        run: |
+          curl -T pozemky.json ftp://${{ secrets.FTP_HOST }}/pozemekdomice/ \
+            --user ${{ secrets.FTP_USER }}:${{ secrets.FTP_PASS }}
