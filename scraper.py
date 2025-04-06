@@ -36,11 +36,18 @@ def extract_from_detail(url):
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Extrahujeme základní lokalitu z nadpisu
+        # 1. Pokus: lokalita z h2
         h2 = soup.select_one("h2.property-title__location")
         lokalita = h2.get_text(strip=True) if h2 else None
 
-        # Pokus o doplnění okresu z textu stránky
+        # 2. Pokus: extrakce z titulku stránky
+        if not lokalita:
+            title = soup.title.string if soup.title else ""
+            match = re.search(r'pozemku [^,]*, ([^,\n]+)', title, re.IGNORECASE)
+            if match:
+                lokalita = match.group(1).strip()
+
+        # 3. Pokus: extrakce z celého textu (např. okres Trutnov)
         full_text = soup.get_text(separator=" ", strip=True)
         okres_match = re.search(r"okres\s+([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž\-\s]+)", full_text)
         if okres_match:
@@ -48,7 +55,7 @@ def extract_from_detail(url):
             if lokalita and okres.lower() not in lokalita.lower():
                 lokalita += f", okres {okres}"
 
-        lat, lon = get_coordinates(lokalita)
+        lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
         return lokalita, lat, lon
     except:
         return None, None, None
