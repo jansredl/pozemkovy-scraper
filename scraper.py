@@ -1,3 +1,4 @@
+
 import requests
 from bs4 import BeautifulSoup
 import json
@@ -31,6 +32,19 @@ def haversine(lat1, lon1, lat2, lon2):
     a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
     return round(R * 2 * atan2(sqrt(a), sqrt(1 - a)), 1)
 
+# Funkce pro získání okresu a kraje z breadcrumbs
+def get_location_from_breadcrumbs(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    breadcrumbs = soup.find('nav', {'class': 'breadcrumb'})
+    if breadcrumbs:
+        breadcrumb_items = breadcrumbs.find_all('a')
+        if len(breadcrumb_items) >= 3:
+            kraj = breadcrumb_items[-2].get_text()  # Předposlední je kraj
+            okres = breadcrumb_items[-3].get_text()  # Třetí od konce je okres
+            return okres, kraj
+    return None, None  # Pokud není, vrátíme None
+
 # Funkce pro získání detailních informací z detailu inzerátu
 def get_detail_info(url):
     try:
@@ -62,7 +76,6 @@ def get_detail_info(url):
         print(f"⚠️ Chyba při načítání detailu: {e}")
         return {}
 
-
 # Funkce pro získání inzerátů z hlavní stránky
 def scrape():
     url = "https://www.sreality.cz/hledani/prodej/pozemky/stavebni-parcely?cena-do=2000000"
@@ -84,7 +97,7 @@ def scrape():
 
         # Parsování výměry, ceny a lokality z titulku
         vymera_match = re.search(r"(\d+)\s*m²", text)
-        cena_match = re.search(r"(\d[\d\s\xa0]*)\s*Kč", text)
+        cena_match = re.search(r"(\d[\d\s ]*)\s*Kč", text)
         lokalita_match = re.search(r"\d+\s*m²\s+(.+?)\s+\d", text)
         fotky_match = re.search(r"(\d+)\s+fotografi", text)
 
@@ -103,8 +116,11 @@ def scrape():
         fotky = int(fotky_match.group(1)) if fotky_match else None
         detail = get_detail_info(full_url)
 
+        # Získání okresu a kraje z breadcrumbs
+        okres, kraj = get_location_from_breadcrumbs(full_url)
+
         # Geokódování pro získání lat a lon
-        geotext = f"{lokalita}, {detail.get('okres')}, Česká republika" if detail.get('okres') else f"{lokalita}, Česká republika"
+        geotext = f"{lokalita}, {okres}, Česká republika" if okres else f"{lokalita}, Česká republika"
         lat, lon = geocode(geotext)
         vzdalenost = haversine(NERATOVICE_LAT, NERATOVICE_LON, lat, lon) if lat and lon else None
         cesta_autem_min = round(vzdalenost / 0.75) if vzdalenost else None
@@ -113,7 +129,8 @@ def scrape():
             "lokalita": lokalita,
             "vymera": vymera,
             "cena": cena,
-            "okres": detail.get("okres"),
+            "okres": okres,
+            "kraj": kraj,
             "lat": lat,
             "lon": lon,
             "vzdalenost_od": "Neratovice",
@@ -143,4 +160,3 @@ if __name__ == "__main__":
     data = scrape()
     with open("pozemky.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
