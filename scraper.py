@@ -30,24 +30,17 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return round(R * c, 1)
 
-def extract_from_detail(url):
+def extract_location_from_detail(url):
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # 1. Pokus: lokalita z h2
+        # Primární extrakce z h2
         h2 = soup.select_one("h2.property-title__location")
         lokalita = h2.get_text(strip=True) if h2 else None
 
-        # 2. Pokus: extrakce z titulku stránky
-        if not lokalita:
-            title = soup.title.string if soup.title else ""
-            match = re.search(r'pozemku [^,]*, ([^,\n]+)', title, re.IGNORECASE)
-            if match:
-                lokalita = match.group(1).strip()
-
-        # 3. Pokus: extrakce z celého textu (např. okres Trutnov)
+        # Hledání "okres XYZ" z textu stránky
         full_text = soup.get_text(separator=" ", strip=True)
         okres_match = re.search(r"okres\s+([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž\-\s]+)", full_text)
         if okres_match:
@@ -101,7 +94,7 @@ def scrape_sreality():
 
             fotky, vymera, cena = extract_data(text)
 
-            detail_lokalita, lat, lon = extract_from_detail(odkaz)
+            lokalita, lat, lon = extract_location_from_detail(odkaz)
             time.sleep(1)
 
             vzdalenost = None
@@ -110,7 +103,7 @@ def scrape_sreality():
                 vzdalenost = haversine_distance(start_lat, start_lon, lat, lon)
 
             results.append({
-                "lokalita": detail_lokalita,
+                "lokalita": lokalita,
                 "cena": cena,
                 "vymera": vymera,
                 "fotky": fotky,
