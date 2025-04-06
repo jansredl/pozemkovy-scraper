@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 import re
 from math import radians, sin, cos, sqrt, atan2
+import time
 
 START_CITY = "Neratovice"
 
@@ -29,40 +30,43 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return round(R * c, 1)
 
+def extract_from_detail(url):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(url, headers=headers)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # Extrahuj adresu
+        address_tag = soup.select_one("h2.property-title__location")
+        if address_tag:
+            return address_tag.get_text(strip=True)
+    except:
+        return None
+    return None
+
 def extract_data(text):
-    # Výchozí hodnoty
     vymera = None
     cena = None
-    lokalita = None
     fotky = None
 
-    # Fotky
     fotky_match = re.search(r"(\d+)\s+fotografi", text)
     if fotky_match:
         fotky = int(fotky_match.group(1))
 
-    # Výměra
     vymera_match = re.search(r"(\d+)\s*m²", text)
     if vymera_match:
         vymera = int(vymera_match.group(1))
 
-    # Cena
     cena_match = re.search(r"(\d[\d\s]+)\s*Kč", text)
     if cena_match:
         cena = int(re.sub(r"\D", "", cena_match.group(1)))
 
-    # Lokalita – text mezi "m²" a "Kč"
-    if vymera_match and cena_match:
-        start = vymera_match.end()
-        end = cena_match.start()
-        lokalita = text[start:end].strip()
-
-    return fotky, vymera, cena, lokalita
+    return fotky, vymera, cena
 
 def scrape_sreality():
     results = []
     headers = {"User-Agent": "Mozilla/5.0"}
-    for page in range(1, 4):
+    for page in range(1, 3):
         url = f"https://www.sreality.cz/hledani/prodej/pozemky/stavebni-parcely?cena-do=2000000&strana={page}"
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, "html.parser")
@@ -79,16 +83,20 @@ def scrape_sreality():
             odkaz = "https://www.sreality.cz" + href
             text = link.get_text(separator=" ", strip=True)
 
-            fotky, vymera, cena, lokalita = extract_data(text)
+            fotky, vymera, cena = extract_data(text)
 
-            lat, lon = get_coordinates(lokalita) if lokalita else (None, None)
+            # 🆕 z detailu načteme lokalitu
+            detail_lokalita = extract_from_detail(odkaz)
+            time.sleep(1)  # respektuj limity
+
+            lat, lon = get_coordinates(detail_lokalita) if detail_lokalita else (None, None)
             vzdalenost = None
             if lat and lon:
                 start_lat, start_lon = get_coordinates(START_CITY)
                 vzdalenost = haversine_distance(start_lat, start_lon, lat, lon)
 
             results.append({
-                "lokalita": lokalita,
+                "lokalita": detail_lokalita,
                 "cena": cena,
                 "vymera": vymera,
                 "fotky": fotky,
