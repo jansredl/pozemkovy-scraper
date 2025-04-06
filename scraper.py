@@ -36,33 +36,22 @@ def extract_from_detail(url):
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # 1️⃣ Primární metoda: JSON data
-        script_tag = soup.find("script", type="application/json")
-        if script_tag:
-            try:
-                json_text = script_tag.string.strip()
-                data = json.loads(json_text)
-                lat = data.get("property", {}).get("gps", {}).get("lat")
-                lon = data.get("property", {}).get("gps", {}).get("lon")
-                loc = data.get("property", {}).get("locality", {})
-                lokalita = loc.get("municipality")
-                if loc.get("district"):
-                    lokalita += f", okres {loc.get('district')}"
-                if lokalita:
-                    return lokalita, lat, lon
-            except:
-                pass  # když JSON selže, přejdeme dál
-
-        # 2️⃣ Fallback: H2 s lokalitou (např. "Sýkořice")
+        # Extrahujeme základní lokalitu z nadpisu
         h2 = soup.select_one("h2.property-title__location")
-        if h2:
-            fallback_address = h2.get_text(strip=True)
-            lat, lon = get_coordinates(fallback_address)
-            return fallback_address, lat, lon
+        lokalita = h2.get_text(strip=True) if h2 else None
 
-    except Exception as e:
+        # Pokus o doplnění okresu z textu stránky
+        full_text = soup.get_text(separator=" ", strip=True)
+        okres_match = re.search(r"okres\s+([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž\-\s]+)", full_text)
+        if okres_match:
+            okres = okres_match.group(1).strip()
+            if lokalita and okres.lower() not in lokalita.lower():
+                lokalita += f", okres {okres}"
+
+        lat, lon = get_coordinates(lokalita)
+        return lokalita, lat, lon
+    except:
         return None, None, None
-    return None, None, None
 
 def extract_data(text):
     vymera = None
