@@ -1,4 +1,3 @@
-
 import requests
 from bs4 import BeautifulSoup
 import json
@@ -11,6 +10,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 NERATOVICE_LAT = 50.2597
 NERATOVICE_LON = 14.5162
 
+# Funkce pro geokódování - získání lat a lon pro lokalitu
 def geocode(address):
     try:
         url = "https://nominatim.openstreetmap.org/search"
@@ -23,25 +23,29 @@ def geocode(address):
         return None, None
     return None, None
 
+# Funkce pro výpočet vzdálenosti mezi dvěma body na Zemi (Haversine formula)
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
+    R = 6371  # Radius Země v km
     dlat = radians(lat2 - lat1)
     dlon = radians(lon2 - lon1)
     a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
     return round(R * 2 * atan2(sqrt(a), sqrt(1 - a)), 1)
 
+# Funkce pro získání detailních informací z detailu inzerátu
 def get_detail_info(url):
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         text = soup.get_text(" ", strip=True).lower()
 
+        # Hledání informací v textu detailu
         okres_match = re.search(r"okres\s+([a-zá-ž\-\s]+)", text)
         katastr_match = re.search(r"katastr[a-z]*\s+územ[íi]\s*([a-zá-ž\-\s]+)", text)
         parcela_match = re.search(r"parcela\s*č(?:\.|íslo)?\s*([\w\-/]+)", text)
         uzemni_plan_match = re.search(r"(https?://[\w./-]*uzemni[\w./-]*\.pdf)", text)
 
-        mobilni = any(x in text for x in ["mobilní dům", "mobilheim", "tiny house", "mobilní domy", "mobilheimy"])
+        # Přidání více variant pro mobilní dům, tiny house atd.
+        mobilni = any(x in text for x in ["mobilní dům", "mobilheim", "tiny house", "mobilní domy", "mobilheimy", "modulární dům", "modulární bydlení"])
 
         return {
             "okres": okres_match.group(1).strip().title() if okres_match else None,
@@ -58,6 +62,8 @@ def get_detail_info(url):
         print(f"⚠️ Chyba při načítání detailu: {e}")
         return {}
 
+
+# Funkce pro získání inzerátů z hlavní stránky
 def scrape():
     url = "https://www.sreality.cz/hledani/prodej/pozemky/stavebni-parcely?cena-do=2000000"
     r = requests.get(url, headers=HEADERS)
@@ -76,6 +82,7 @@ def scrape():
         print(f"➡️ Zpracovávám inzerát: {full_url}")
         text = a.get_text(" ", strip=True)
 
+        # Parsování výměry, ceny a lokality z titulku
         vymera_match = re.search(r"(\d+)\s*m²", text)
         cena_match = re.search(r"(\d[\d\s\xa0]*)\s*Kč", text)
         lokalita_match = re.search(r"\d+\s*m²\s+(.+?)\s+\d", text)
@@ -96,6 +103,7 @@ def scrape():
         fotky = int(fotky_match.group(1)) if fotky_match else None
         detail = get_detail_info(full_url)
 
+        # Geokódování pro získání lat a lon
         geotext = f"{lokalita}, {detail.get('okres')}, Česká republika" if detail.get('okres') else f"{lokalita}, Česká republika"
         lat, lon = geocode(geotext)
         vzdalenost = haversine(NERATOVICE_LAT, NERATOVICE_LON, lat, lon) if lat and lon else None
@@ -130,7 +138,9 @@ def scrape():
     print(f"✅ Hotovo – nalezeno {len(results)} pozemků")
     return results
 
+# Spustíme scraper a uložíme výsledky do souboru
 if __name__ == "__main__":
     data = scrape()
     with open("pozemky.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
