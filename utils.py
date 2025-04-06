@@ -1,17 +1,19 @@
 import requests
 from math import radians, sin, cos, sqrt, atan2
 
+NERATOVICE_LAT = 50.2597
+NERATOVICE_LON = 14.5162
+
 def geocode_address(address):
     try:
         url = "https://nominatim.openstreetmap.org/search"
         params = {"q": address, "format": "json", "limit": 1}
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        data = response.json()
+        r = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+        data = r.json()
         if data:
             return float(data[0]["lat"]), float(data[0]["lon"])
-    except Exception as e:
-        print(f"Chyba při geokódování: {e}")
+    except:
+        return None, None
     return None, None
 
 def haversine_distance(lat1, lon1, lat2, lon2):
