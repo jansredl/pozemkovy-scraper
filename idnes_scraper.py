@@ -1,91 +1,82 @@
+
 import requests
 from bs4 import BeautifulSoup
 from utils import geocode_address, haversine_distance
 from datetime import datetime
-import time
 
-def is_partial_ownership(text):
-    return any(podil in text.lower() for podil in ["1/2", "1/", "1\", "½", "polovina", "spoluvlastnictví", "ideální", "část"])
+BASE_URL = "https://reality.idnes.cz"
+LISTING_URL = "https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
+
+def is_podil(text):
+    return "podíl" in text.lower() or "podil" in text.lower()
+
+def parse_listing(article):
+    title = article.select_one(".c-products__title")
+    info = article.select_one(".c-products__info")
+    price = article.select_one(".c-products__price strong")
+    link_tag = article.select_one("a.c-products__link")
+
+    if not all([title, info, price, link_tag]):
+        return None
+
+    text = f"{title.text} {info.text} {price.text}"
+    if is_podil(text):
+        return None
+
+    url = BASE_URL + link_tag["href"]
+    location = info.text.strip()
+    area = None
+    if "m²" in title.text:
+        area = int(title.text.split("m²")[0].split()[-1].replace(" ", "").replace("\xa0", ""))
+
+    price_text = price.text.replace("\xa0", "").replace("Kč", "").replace(" ", "")
+    try:
+        price_val = int(price_text)
+    except ValueError:
+        price_val = None
+
+    lat, lon = geocode_address(location)
+    vzd_km, cesta_min = haversine_distance(lat, lon)
+
+    return {
+        "lokalita": location,
+        "vymera": area,
+        "cena": price_val,
+        "okres": "",
+        "kraj": "",
+        "lat": lat,
+        "lon": lon,
+        "vzdalenost_od": "Neratovice",
+        "vzdalenost_km": vzd_km,
+        "cesta_autem_min": cesta_min,
+        "sit_voda": False,
+        "sit_cov": False,
+        "sit_kanalizace": False,
+        "sit_elektrina": False,
+        "mobilni_dum_vhodne": False,
+        "cislo_parcely": None,
+        "katastr": None,
+        "uzemni_plan_url": None,
+        "fotky": 0,
+        "odkaz": url,
+        "zdroj": "reality.idnes.cz",
+        "datum_zverejneni": datetime.today().strftime('%Y-%m-%d')
+    }
 
 def scrape_idnes():
     results = []
-    base_url = "https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-
     for page in range(1, 3):
-        if page == 1:
-            url = base_url
-        else:
-            url = f"{base_url}?page={page}"
-
-        print(f"🔍 Procházím stránku {page}: {url}")
-        response = requests.get(url, headers=headers)
+        url = LISTING_URL if page == 1 else f"{LISTING_URL}?page={page}"
+        response = requests.get(url, headers=HEADERS)
         soup = BeautifulSoup(response.text, "html.parser")
-        listings = soup.find_all("article")
+        articles = soup.select("article")
 
-        for listing in listings:
-            link_tag = listing.find("a", class_="c-products__link")
-            if not link_tag:
-                continue
+        for article in articles:
+            result = parse_listing(article)
+            if result:
+                results.append(result)
 
-            url_detail = link_tag.get("href")
-            if not url_detail.startswith("http"):
-                url_detail = "https://reality.idnes.cz" + url_detail
-
-            title = listing.find("h2")
-            if title and is_partial_ownership(title.text):
-                continue
-
-            location_tag = listing.find("p", class_="c-products__info")
-            location = location_tag.text.strip() if location_tag else ""
-
-            price_tag = listing.find("p", class_="c-products__price")
-            price_text = price_tag.find("strong").text.strip().replace(" ", "").replace("Kč", "") if price_tag else ""
-            try:
-                price = int(price_text)
-            except:
-                price = None
-
-            area = None
-            if title:
-                for word in title.text.strip().split():
-                    if word.endswith("m²") or word.endswith("m2"):
-                        try:
-                            area = int(word.replace("m²", "").replace("m2", "").strip())
-                        except:
-                            pass
-
-            lat, lon, okres, kraj = geocode_address(location)
-            vzdalenost_km, cesta_autem_min = haversine_distance(lat, lon)
-
-            results.append({
-                "lokalita": location,
-                "vymera": area,
-                "cena": price,
-                "okres": okres,
-                "kraj": kraj,
-                "lat": lat,
-                "lon": lon,
-                "vzdalenost_od": "Neratovice",
-                "vzdalenost_km": vzdalenost_km,
-                "cesta_autem_min": cesta_autem_min,
-                "sit_voda": None,
-                "sit_cov": None,
-                "sit_kanalizace": None,
-                "sit_elektrina": None,
-                "mobilni_dum_vhodne": None,
-                "cislo_parcely": None,
-                "katastr": None,
-                "uzemni_plan_url": None,
-                "fotky": None,
-                "odkaz": url_detail,
-                "zdroj": "reality.idnes.cz",
-                "datum_zverejneni": datetime.today().strftime("%Y-%m-%d")
-            })
-
-            time.sleep(0.5)
-
-    print(f"✅ idnes: nalezeno {len(results)} inzerátů")
     return results
