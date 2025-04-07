@@ -1,44 +1,47 @@
+
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 from utils import geocode_address, haversine_distance
-import datetime
 
 BASE_URL = "https://reality.idnes.cz"
-START_URL = "https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
 
-def is_share_offer(title):
-    podil_keywords = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
-    return any(podil in title.lower() for podil in podil_keywords)
+def is_share_offer(text):
+    text = text.lower()
+    keywords = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
+    return any(keyword in text for keyword in keywords)
 
 def parse_listing(article):
-    title_tag = article.select_one("h2.c-products__title")
-    location_tag = article.select_one("p.c-products__info")
-    price_tag = article.select_one("p.c-products__price strong")
-    size_info = title_tag.get_text(strip=True) if title_tag else ""
-
-    if is_share_offer(size_info):
+    a_tag = article.find("a")
+    if not a_tag or not a_tag.get("href"):
         return None
 
-    size = None
-    if "m²" in size_info:
+    odkaz = BASE_URL + a_tag["href"]
+    title_tag = article.find("h2")
+    title = title_tag.get_text(strip=True) if title_tag else ""
+
+    if is_share_offer(title):
+        return None
+
+    info_tag = article.find("p", class_="c-products__info")
+    location = info_tag.get_text(strip=True) if info_tag else ""
+
+    price_tag = article.find("p", class_="c-products__price")
+    price_strong = price_tag.find("strong") if price_tag else None
+    cena = None
+    if price_strong:
         try:
-            size = int(size_info.split()[-2])
-        except:
+            cena = int(price_strong.get_text(strip=True).replace(" ", "").replace("Kč", "").replace(" ", ""))
+        except ValueError:
             pass
 
-    location_text = location_tag.get_text(strip=True) if location_tag else ""
-    city = location_text.split(",")[0].strip() if "," in location_text else location_text
-
-    lat, lon, okres, kraj = geocode_address(city)
-    if lat is None:
-        return None
-
-    vzd_km, cesta_min = haversine_distance(lat, lon, 50.2597, 14.5189)
+    lat, lon, okres, kraj = geocode_address(location)
+    vzd_km, cesta_min = haversine_distance(lat, lon)
 
     return {
-        "lokalita": city,
-        "vymera": size,
-        "cena": parse_price(price_tag.get_text()) if price_tag else None,
+        "lokalita": location,
+        "vymera": None,
+        "cena": cena,
         "okres": okres,
         "kraj": kraj,
         "lat": lat,
@@ -54,30 +57,32 @@ def parse_listing(article):
         "cislo_parcely": None,
         "katastr": None,
         "uzemni_plan_url": None,
-        "fotky": count_photos(article),
-        "odkaz": BASE_URL + article.a["href"],
+        "fotky": None,
+        "odkaz": odkaz,
         "zdroj": "reality.idnes.cz",
-        "datum_zverejneni": str(datetime.date.today())
+        "datum_zverejneni": datetime.today().strftime("%Y-%m-%d")
     }
 
-def count_photos(article):
-    return len(article.select("span.c-products__img img"))
-
-def parse_price(price_str):
-    return int("".join(filter(str.isdigit, price_str)))
-
 def scrape_idnes():
-    results = []
+    url = BASE_URL + "/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
+    listings = []
+
     for page in range(1, 3):
-        url = START_URL if page == 1 else START_URL + f"?page={page}"
-        print(f"🔍 Procházím stránku {page}: {url}")
-        resp = requests.get(url, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        articles = soup.select("div.c-products__item article")
+        if page > 1:
+            page_url = f"{url}?page={page}"
+        else:
+            page_url = url
+
+        print(f"🔍 Procházím stránku {page}: {page_url}")
+        res = requests.get(page_url)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        articles = soup.find_all("article")
         for article in articles:
             result = parse_listing(article)
             if result:
                 print(f"✅ idnes: zpracován inzerát {result['odkaz']}")
-                results.append(result)
-    print(f"✅ idnes: nalezeno {len(results)} inzerátů")
-    return results
+                listings.append(result)
+
+    print(f"✅ idnes: nalezeno {len(listings)} inzerátů")
+    return listings
