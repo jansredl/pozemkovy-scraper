@@ -1,121 +1,106 @@
-import requests
-from bs4 import BeautifulSoup
+import asyncio
+from playwright.async_api import async_playwright
 from utils import geocode_address, haversine_distance
-import time
+import re
+import json
+from datetime import datetime
 
 BASE_URL = "https://reality.idnes.cz"
-SEARCH_URL = f"{BASE_URL}/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
+SEARCH_URL = "https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
+CITY_FROM = "Neratovice"
 
-NERATOVICE_LAT, NERATOVICE_LON = 50.259, 14.517
+def is_share(text):
+    keywords = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
+    return any(k in text.lower() for k in keywords)
 
-IGNORED_KEYWORDS = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
+async def scrape_idnes():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(SEARCH_URL)
 
-def is_shared_ownership(text):
-    if not text:
-        return False
-    text_lower = text.lower()
-    return any(kw in text_lower for kw in IGNORED_KEYWORDS)
+        results = []
+        page_num = 1
+        while True:
+            print(f"🔍 Procházím stránku {page_num}: {page.url}")
+            await page.wait_for_selector("article")
 
-def get_total_pages():
-    resp = requests.get(SEARCH_URL, headers=HEADERS)
-    soup = BeautifulSoup(resp.text, "html.parser")
-    last_page = soup.select_one(".paging .last a")
-    if last_page and "?page=" in last_page.get("href", ""):
-        return int(last_page["href"].split("?page=")[-1])
-    return 1
+            listings = await page.locator("article").all()
+            if not listings:
+                break
 
-def parse_listing(article):
-    a = article.select_one("a.c-products__link")
-    if not a:
-        return None
+            for article in listings:
+                try:
+                    title = await article.locator("h2").text_content()
+                    if is_share(title):
+                        continue
 
-    url = BASE_URL + a["href"]
-    title = a.select_one("h2.c-products__title").get_text(strip=True)
+                    a_tag = article.locator("a.c-products__link")
+                    detail_url = await a_tag.get_attribute("href")
+                    if not detail_url:
+                        continue
 
-    if is_shared_ownership(title):
-        return None
+                    full_url = BASE_URL + detail_url
+                    detail_page = await browser.new_page()
+                    await detail_page.goto(full_url)
+                    await detail_page.wait_for_selector("body")
 
-    detail_resp = requests.get(url, headers=HEADERS)
-    detail_soup = BeautifulSoup(detail_resp.text, "html.parser")
+                    content = await detail_page.content()
 
-    def extract_text(label):
-        span = detail_soup.find("span", string=label)
-        if span and span.find_next_sibling("strong"):
-            return span.find_next_sibling("strong").get_text(strip=True)
-        return None
+                    def extract(pattern, default="-"):
+                        match = re.search(pattern, content)
+                        return match.group(1).strip() if match else default
 
-    def extract_bool(label):
-        span = detail_soup.find("span", string=label)
-        if span and span.find_next("svg"):
-            return "icon-cross" not in span.find_next("svg").get("class", [])
-        return None
+                    vymera = extract(r"([\d\s]+)\s*m²")
+                    cena = extract(r"([\d\s]+)\s*Kč").replace(" ", "")
+                    lokalita = extract(r'<h1[^>]*>(.*?)</h1>', "")
+                    datum = datetime.today().strftime("%Y-%m-%d")
 
-    cena = extract_text("Cena:")
-    vymera = extract_text("Plocha pozemku:")
-    lokalita = title.split(",")[0] if "," in title else title
+                    lat, lon, okres, kraj = geocode_address(lokalita)
+                    vzd_km, cesta_min = haversine_distance(lat, lon)
 
-    geo = geocode_address(lokalita)
-    if len(geo) == 4:
-        lat, lon, okres, kraj = geo
-    else:
-        lat, lon, okres, kraj = None, None, None, None
+                    voda = "❌" not in content
+                    elektrina = "Elektřina" in content and "❌" not in content
+                    kanalizace = "Kanalizace" in content and "❌" not in content
+                    mobilni_dum = "Mobilní dům" in content and "❌" not in content
+                    fotky = len(re.findall(r"compile/thumbs/", content))
 
-    if lat and lon:
-        vzd_km, cesta_min = haversine_distance(lat, lon, NERATOVICE_LAT, NERATOVICE_LON)
-    else:
-        vzd_km, cesta_min = None, None
+                    results.append({
+                        "lokalita": lokalita,
+                        "vymera": int(vymera.replace(" ", "")) if vymera.isdigit() else None,
+                        "cena": int(cena) if cena.isdigit() else None,
+                        "okres": okres,
+                        "kraj": kraj,
+                        "lat": lat,
+                        "lon": lon,
+                        "vzdalenost_od": CITY_FROM,
+                        "vzdalenost_km": vzd_km,
+                        "cesta_autem_min": cesta_min,
+                        "sit_voda": voda,
+                        "sit_kanalizace": kanalizace,
+                        "sit_elektrina": elektrina,
+                        "mobilni_dum_vhodne": mobilni_dum,
+                        "cislo_parcely": "-",
+                        "katastr": "-",
+                        "uzemni_plan_url": None,
+                        "fotky": fotky,
+                        "odkaz": full_url,
+                        "zdroj": "reality.idnes.cz",
+                        "datum_zverejneni": datum
+                    })
 
-    return {
-        "lokalita": lokalita,
-        "vymera": parse_number(vymera),
-        "cena": parse_number(cena),
-        "okres": okres,
-        "kraj": kraj,
-        "lat": lat,
-        "lon": lon,
-        "vzdalenost_od": "Neratovice",
-        "vzdalenost_km": vzd_km,
-        "cesta_autem_min": cesta_min,
-        "sit_voda": extract_bool("Voda:"),
-        "sit_cov": extract_bool("ČOV:"),
-        "sit_kanalizace": extract_bool("Kanalizace:"),
-        "sit_elektrina": extract_bool("Elektřina:"),
-        "mobilni_dum_vhodne": extract_bool("Mobilní dům:"),
-        "cislo_parcely": extract_text("Parcelní číslo:"),
-        "katastr": extract_text("Katastr:"),
-        "uzemni_plan_url": None,
-        "fotky": len(detail_soup.select(".c-gallery__item")),
-        "odkaz": url,
-        "zdroj": "reality.idnes.cz",
-        "datum_zverejneni": extract_text("Datum zveřejnění:")
-    }
+                    await detail_page.close()
+                except Exception as e:
+                    print(f"⚠️ Chyba u inzerátu: {e}")
+                    continue
 
-def parse_number(text):
-    if not text:
-        return None
-    digits = "".join(c for c in text if c.isdigit())
-    return int(digits) if digits else None
+            next_button = page.locator("a[aria-label='Další']")
+            if await next_button.is_visible():
+                await next_button.click()
+                await page.wait_for_load_state("networkidle")
+                page_num += 1
+            else:
+                break
 
-def scrape_idnes():
-    results = []
-    total_pages = get_total_pages()
-
-    for page in range(1, total_pages + 1):
-        url = SEARCH_URL if page == 1 else f"{SEARCH_URL}?page={page}"
-        print(f"🔎 Procházím stránku {page}: {url}")
-        resp = requests.get(url, headers=HEADERS)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        articles = soup.select("article.c-products__item")
-
-        for article in articles:
-            result = parse_listing(article)
-            if result:
-                print("✅ idnes: zpracován inzerát", result["odkaz"])
-                results.append(result)
-            time.sleep(0.8)
-
-    print(f"✅ idnes: nalezeno {len(results)} inzerátů")
-    return results
+        await browser.close()
+        return results
