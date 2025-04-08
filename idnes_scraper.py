@@ -9,32 +9,32 @@ from time import sleep
 NERATOVICE_COORDS = (50.2597, 14.5176)
 IGNORE_KEYWORDS = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
 
-# Načti obce.json
+# Načtení dat z obce.json
 with open("obce.json", encoding="utf-8") as f:
     OBCE = json.load(f)
 
 def extract_obec_okres(text):
-    """Získá obec a okres z řetězce typu 'Kunovice, okres Uherské Hradiště'"""
-    if not text:
-        return None, None
-    text = text.strip()
-    parts = text.split(", okres")
-    obec = parts[0].strip() if len(parts) > 0 else None
-    okres = parts[1].strip() if len(parts) > 1 else None
+    # Příklad: "Kunovice, okres Uherské Hradiště"
+    obec = ""
+    okres = ""
+    if "," in text:
+        parts = [x.strip() for x in text.split(",")]
+        if len(parts) == 2:
+            obec = parts[0]
+            if "okres" in parts[1].lower():
+                okres = parts[1].lower().replace("okres", "").strip()
     return obec, okres
 
-def find_obec_info(obec, okres):
-    """Najde obec v obce.json podle názvu obce a okresu"""
+def find_obec_info(obec_name, okres_name):
     for o in OBCE:
-        if o["hezkyNazev"].lower() == obec.lower():
-            if okres is None or okres.lower() in o["adresaUradu"]["obec"].lower():
+        if o.get("hezkyNazev", "").lower() == obec_name.lower():
+            if okres_name == "" or okres_name in o.get("adresaUradu", {}).get("obec", "").lower():
                 return o
     return None
 
 def geocode_from_obce(city_text):
     obec, okres = extract_obec_okres(city_text)
     print(f"🔍 Hledám obec: {obec}, okres: {okres}")
-
     info = find_obec_info(obec, okres)
     if info:
         lat, lon = info["souradnice"]
@@ -43,7 +43,6 @@ def geocode_from_obce(city_text):
         vzdalenost_km = round(geodesic(NERATOVICE_COORDS, (lat, lon)).km)
         cesta_autem_min = int(vzdalenost_km * 1.2)
         return lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min
-    print("⚠️ Obec nebyla nalezena v obce.json")
     return None, None, None, None, None, None
 
 def parse_listing(article):
@@ -104,8 +103,6 @@ def scrape_idnes():
         html = page.content()
         soup = BeautifulSoup(html, "lxml")
         articles = soup.select("article")
-
-        print(f"🔎 Nalezeno článků: {len(articles)}")
 
         for article in articles:
             data = parse_listing(article)
