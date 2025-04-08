@@ -26,11 +26,15 @@ def extract_obec_okres(text):
     return obec, okres
 
 def find_obec_info(obec_name, okres_name):
-    for o in OBCE:
-        if o.get("hezkyNazev", "").lower() == obec_name.lower():
-            if okres_name == "" or okres_name in o.get("adresaUradu", {}).get("obec", "").lower():
-                return o
+    for obec in OBCE:
+        if isinstance(obec, dict):  # Ověříme, že obec je opravdu dict
+            hezky = obec.get("hezkyNazev", "").lower()
+            okres_obce = obec.get("adresaUradu", {}).get("obec", "").lower()
+            if hezky == obec_name.lower():
+                if okres_name == "" or okres_name in okres_obce:
+                    return obec
     return None
+
 
 def geocode_from_obce(city_text):
     obec, okres = extract_obec_okres(city_text)
