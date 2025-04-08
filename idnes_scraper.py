@@ -9,40 +9,35 @@ from time import sleep
 NERATOVICE_COORDS = (50.2597, 14.5176)
 IGNORE_KEYWORDS = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
 
-with open("obce.json", "r", encoding="utf-8") as f:
+# Načtení dat z obce.json
+with open("obce.json", encoding="utf-8") as f:
     OBCE = json.load(f)
 
-def find_obec_info(nazev):
-    nazev = nazev.lower()
+def find_obec_info(city_text):
+    city_clean = city_text.lower().strip()
     for obec in OBCE:
-        if obec["hezkyNazev"].lower() in nazev:
-            coords = obec["souradnice"]
-            return {
-                "lat": coords[0],
-                "lon": coords[1],
-                "okres": obec["adresaUradu"]["obec"],
-                "kraj": obec["adresaUradu"]["kraj"]
-            }
+        if obec["hezkyNazev"].lower() in city_clean:
+            return obec
     return None
 
 def geocode_from_obce(city_text):
     info = find_obec_info(city_text)
-    if not info:
-        return None, None, None, None, None, None
-
-    lat, lon = info["lat"], info["lon"]
-    okres = info["okres"]
-    kraj = info["kraj"]
-    vzdalenost_km = round(geodesic(NERATOVICE_COORDS, (lat, lon)).km, 1)
-    cesta_autem_min = round(vzdalenost_km * 1.2)
-    return lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min
+    if info:
+        lat, lon = info["souradnice"]
+        okres = info["adresaUradu"]["obec"]
+        kraj = info["adresaUradu"]["kraj"]
+        vzdalenost_km = round(geodesic(NERATOVICE_COORDS, (lat, lon)).km)
+        cesta_autem_min = int(vzdalenost_km * 1.2)
+        return lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min
+    return None, None, None, None, None, None
 
 def parse_listing(article):
     a = article.select_one("a.c-products__link")
-    if not a:
+    title_tag = article.select_one("h2")
+    if not title_tag:
         return None
 
-    title = article.select_one("h2").get_text(strip=True)
+    title = title_tag.get_text(strip=True)
     if any(x in title.lower() for x in IGNORE_KEYWORDS):
         return None
 
@@ -51,23 +46,18 @@ def parse_listing(article):
 
     lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min = geocode_from_obce(city_text)
 
-    price = article.select_one(".c-products__price strong")
-    price_val = price.get_text(strip=True).replace("\u00a0", "").replace("Kč", "") if price else None
-    cena = int(price_val.replace(" ", "")) if price_val else None
+    price_tag = article.select_one(".c-products__price strong")
+    price_val = price_tag.get_text(strip=True).replace("\u00a0", "").replace("Kč", "") if price_tag else None
 
     area_match = re.search(r"(\d+)[^\d]+m²", title)
     vymera = int(area_match.group(1)) if area_match else None
 
-    fotky = 0  # nelze spolehlivě zjistit z výpisu
     odkaz = "https://reality.idnes.cz" + a["href"] if a else ""
-
-    if not (city_text and cena and vymera):
-        return None
 
     return {
         "lokalita": city_text,
         "vymera": vymera,
-        "cena": cena,
+        "cena": int(price_val.replace(" ", "")) if price_val else None,
         "okres": okres,
         "kraj": kraj,
         "lat": lat,
@@ -80,13 +70,13 @@ def parse_listing(article):
         "sit_kanalizace": False,
         "sit_elektrina": False,
         "mobilni_dum_vhodne": False,
-        "cislo_parcely": None,
-        "katastr": None,
+        "cislo_parcely": "-",
+        "katastr": "-",
         "uzemni_plan_url": None,
-        "fotky": fotky,
+        "fotky": 0,
         "odkaz": odkaz,
         "zdroj": "reality.idnes.cz",
-        "datum_zverejneni": datetime.today().strftime("%Y-%m-%d")
+        "datum_zverejneni": "2025-04-07"
     }
 
 def scrape_idnes():
@@ -94,12 +84,10 @@ def scrape_idnes():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        url = "https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
-        page.goto(url)
-        sleep(3)
-
+        page.goto("https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/")
+        sleep(2)
         html = page.content()
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "lxml")
         articles = soup.select("article")
 
         for article in articles:
@@ -109,9 +97,3 @@ def scrape_idnes():
 
         browser.close()
     return results
-
-if __name__ == "__main__":
-    data = scrape_idnes()
-    with open("idnes_output.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    print(f"✅ Uloženo {len(data)} inzerátů do idnes_output.json")
