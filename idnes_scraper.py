@@ -38,23 +38,26 @@ def geocode_address(city_text):
 
 def parse_listing(article):
     a = article.select_one("a.c-products__link")
-    title = article.select_one("h2").get_text(strip=True)
+    h2_elem = article.select_one("h2")
+    if not h2_elem:
+        return None
+    title = h2_elem.get_text(strip=True)
 
     if any(x in title.lower() for x in IGNORE_KEYWORDS):
         return None
 
-    city = article.select_one("p.c-products__info")
-    city_text = city.get_text(strip=True) if city else ""
+    city_elem = article.select_one("p.c-products__info")
+    city_text = city_elem.get_text(strip=True) if city_elem else ""
 
     lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min = geocode_address(city_text)
 
-    price = article.select_one(".c-products__price strong")
-    price_val = price.get_text(strip=True).replace("\u00a0", "").replace("Kč", "") if price else None
+    price_elem = article.select_one(".c-products__price strong")
+    price_val = price_elem.get_text(strip=True).replace("\u00a0", "").replace("Kč", "") if price_elem else None
 
     area_match = re.search(r"(\d+)[^\d]+m²", title)
     vymera = int(area_match.group(1)) if area_match else None
 
-    odkaz = "https://reality.idnes.cz" + a["href"] if a else ""
+    odkaz = "https://reality.idnes.cz" + a["href"] if a and a.has_attr("href") else ""
 
     return {
         "lokalita": city_text,
@@ -80,6 +83,7 @@ def parse_listing(article):
         "zdroj": "reality.idnes.cz",
         "datum_zverejneni": "2025-04-07"
     }
+
 
 def scrape_idnes():
     results = []
