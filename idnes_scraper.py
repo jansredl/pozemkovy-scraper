@@ -1,106 +1,101 @@
-import asyncio
-from playwright.async_api import async_playwright
-from utils import geocode_address, haversine_distance
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
 import re
-import json
-from datetime import datetime
+from geopy.distance import geodesic
+from time import sleep
 
-BASE_URL = "https://reality.idnes.cz"
-SEARCH_URL = "https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
-CITY_FROM = "Neratovice"
+NERATOVICE_COORDS = (50.2597, 14.5176)
 
-def is_share(text):
-    keywords = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
-    return any(k in text.lower() for k in keywords)
+IGNORE_KEYWORDS = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
 
-async def scrape_idnes():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto(SEARCH_URL)
+def geocode_address(city_text):
+    parts = [x.strip() for x in city_text.split(",")]
+    city = parts[0] if parts else ""
+    okres = ""
+    kraj = ""
 
-        results = []
-        page_num = 1
-        while True:
-            print(f"🔍 Procházím stránku {page_num}: {page.url}")
-            await page.wait_for_selector("article")
+    coords_map = {
+        "Vimperk": (49.0506, 13.7775),
+        "Prachatice": (49.0126, 13.9982),
+        "Skuhrov": (50.2021, 15.2772),
+        "Jedovnice": (49.3499, 16.7461),
+        "Moravský Krumlov": (49.0481, 16.3129),
+        "Majdalena": (48.9452, 14.9336),
+    }
+    coords = None
+    for key in coords_map:
+        if key.lower() in city_text.lower():
+            coords = coords_map[key]
+            okres = key
+            break
 
-            listings = await page.locator("article").all()
-            if not listings:
-                break
+    if coords:
+        vzdalenost_km = round(geodesic(NERATOVICE_COORDS, coords).km)
+        cesta_autem_min = vzdalenost_km * 1.2  # jednoduchý odhad
+        return coords[0], coords[1], okres, kraj, vzdalenost_km, int(cesta_autem_min)
+    else:
+        return None, None, None, None, None, None
 
-            for article in listings:
-                try:
-                    title = await article.locator("h2").text_content()
-                    if is_share(title):
-                        continue
+def parse_listing(article):
+    a = article.select_one("a.c-products__link")
+    title = article.select_one("h2").get_text(strip=True)
 
-                    a_tag = article.locator("a.c-products__link")
-                    detail_url = await a_tag.get_attribute("href")
-                    if not detail_url:
-                        continue
+    if any(x in title.lower() for x in IGNORE_KEYWORDS):
+        return None
 
-                    full_url = BASE_URL + detail_url
-                    detail_page = await browser.new_page()
-                    await detail_page.goto(full_url)
-                    await detail_page.wait_for_selector("body")
+    city = article.select_one("p.c-products__info")
+    city_text = city.get_text(strip=True) if city else ""
 
-                    content = await detail_page.content()
+    lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min = geocode_address(city_text)
 
-                    def extract(pattern, default="-"):
-                        match = re.search(pattern, content)
-                        return match.group(1).strip() if match else default
+    price = article.select_one(".c-products__price strong")
+    price_val = price.get_text(strip=True).replace("\u00a0", "").replace("Kč", "") if price else None
 
-                    vymera = extract(r"([\d\s]+)\s*m²")
-                    cena = extract(r"([\d\s]+)\s*Kč").replace(" ", "")
-                    lokalita = extract(r'<h1[^>]*>(.*?)</h1>', "")
-                    datum = datetime.today().strftime("%Y-%m-%d")
+    area_match = re.search(r"(\d+)[^\d]+m²", title)
+    vymera = int(area_match.group(1)) if area_match else None
 
-                    lat, lon, okres, kraj = geocode_address(lokalita)
-                    vzd_km, cesta_min = haversine_distance(lat, lon)
+    odkaz = "https://reality.idnes.cz" + a["href"] if a else ""
 
-                    voda = "❌" not in content
-                    elektrina = "Elektřina" in content and "❌" not in content
-                    kanalizace = "Kanalizace" in content and "❌" not in content
-                    mobilni_dum = "Mobilní dům" in content and "❌" not in content
-                    fotky = len(re.findall(r"compile/thumbs/", content))
+    return {
+        "lokalita": city_text,
+        "vymera": vymera,
+        "cena": int(price_val.replace(" ", "")) if price_val else None,
+        "okres": okres,
+        "kraj": kraj,
+        "lat": lat,
+        "lon": lon,
+        "vzdalenost_od": "Neratovice",
+        "vzdalenost_km": vzdalenost_km,
+        "cesta_autem_min": cesta_autem_min,
+        "sit_voda": False,
+        "sit_cov": False,
+        "sit_kanalizace": False,
+        "sit_elektrina": False,
+        "mobilni_dum_vhodne": False,
+        "cislo_parcely": "-",
+        "katastr": "-",
+        "uzemni_plan_url": None,
+        "fotky": 0,
+        "odkaz": odkaz,
+        "zdroj": "reality.idnes.cz",
+        "datum_zverejneni": "2025-04-07"
+    }
 
-                    results.append({
-                        "lokalita": lokalita,
-                        "vymera": int(vymera.replace(" ", "")) if vymera.isdigit() else None,
-                        "cena": int(cena) if cena.isdigit() else None,
-                        "okres": okres,
-                        "kraj": kraj,
-                        "lat": lat,
-                        "lon": lon,
-                        "vzdalenost_od": CITY_FROM,
-                        "vzdalenost_km": vzd_km,
-                        "cesta_autem_min": cesta_min,
-                        "sit_voda": voda,
-                        "sit_kanalizace": kanalizace,
-                        "sit_elektrina": elektrina,
-                        "mobilni_dum_vhodne": mobilni_dum,
-                        "cislo_parcely": "-",
-                        "katastr": "-",
-                        "uzemni_plan_url": None,
-                        "fotky": fotky,
-                        "odkaz": full_url,
-                        "zdroj": "reality.idnes.cz",
-                        "datum_zverejneni": datum
-                    })
+def scrape_idnes():
+    results = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto("https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/")
+        sleep(2)
+        html = page.content()
+        soup = BeautifulSoup(html, "lxml")
+        articles = soup.select("article")
 
-                    await detail_page.close()
-                except Exception as e:
-                    print(f"⚠️ Chyba u inzerátu: {e}")
-                    continue
+        for article in articles:
+            data = parse_listing(article)
+            if data:
+                results.append(data)
 
-            next_button = page.locator("a[aria-label='Další']")
-            if await next_button.is_visible():
-                await next_button.click()
-                await page.wait_for_load_state("networkidle")
-                page_num += 1
-            else:
-                break
-
-        await browser.close()
-        return results
+        browser.close()
+    return results
