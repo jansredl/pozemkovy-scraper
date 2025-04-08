@@ -1,60 +1,73 @@
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
 import re
-from geopy.distance import geodesic
-from time import sleep
 import json
+from bs4 import BeautifulSoup
+from geopy.distance import geodesic
+from datetime import datetime
+from playwright.sync_api import sync_playwright
+from time import sleep
 
 NERATOVICE_COORDS = (50.2597, 14.5176)
-
 IGNORE_KEYWORDS = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
 
-# KROK 1: Načti obce.json (soubor musí být ve stejné složce jako tento skript)
-with open("obce.json", encoding="utf-8") as f:
-    OBCE_DATA = json.load(f)
+with open("obce.json", "r", encoding="utf-8") as f:
+    OBCE = json.load(f)
 
-# KROK 2: Najdi souřadnice obce podle názvu (město, okres, kraj)
-def geocode_address(city_text):
-    city_text_clean = city_text.lower().strip()
-    for obec in OBCE_DATA:
-        if obec["nazev_obce"].lower() in city_text_clean:
-            lat = float(obec["wgs84_lat"])
-            lon = float(obec["wgs84_lon"])
-            okres = obec.get("nazev_okresu", "")
-            kraj = obec.get("nazev_kraje", "")
-            vzdalenost_km = round(geodesic(NERATOVICE_COORDS, (lat, lon)).km)
-            cesta_autem_min = int(vzdalenost_km * 1.2)
-            return lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min
-    return None, None, None, None, None, None
+def find_obec_info(nazev):
+    nazev = nazev.lower()
+    for obec in OBCE:
+        if obec["hezkyNazev"].lower() in nazev:
+            coords = obec["souradnice"]
+            return {
+                "lat": coords[0],
+                "lon": coords[1],
+                "okres": obec["adresaUradu"]["obec"],
+                "kraj": obec["adresaUradu"]["kraj"]
+            }
+    return None
 
-# Parsování jednotlivého inzerátu
+def geocode_from_obce(city_text):
+    info = find_obec_info(city_text)
+    if not info:
+        return None, None, None, None, None, None
+
+    lat, lon = info["lat"], info["lon"]
+    okres = info["okres"]
+    kraj = info["kraj"]
+    vzdalenost_km = round(geodesic(NERATOVICE_COORDS, (lat, lon)).km, 1)
+    cesta_autem_min = round(vzdalenost_km * 1.2)
+    return lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min
+
 def parse_listing(article):
     a = article.select_one("a.c-products__link")
-    title_el = article.select_one("h2")
-    if not title_el:
+    if not a:
         return None
-    title = title_el.get_text(strip=True)
 
+    title = article.select_one("h2").get_text(strip=True)
     if any(x in title.lower() for x in IGNORE_KEYWORDS):
         return None
 
-    city = article.select_one("p.c-products__info")
-    city_text = city.get_text(strip=True) if city else ""
+    city_tag = article.select_one("p.c-products__info")
+    city_text = city_tag.get_text(strip=True) if city_tag else ""
 
-    lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min = geocode_address(city_text)
+    lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min = geocode_from_obce(city_text)
 
     price = article.select_one(".c-products__price strong")
     price_val = price.get_text(strip=True).replace("\u00a0", "").replace("Kč", "") if price else None
+    cena = int(price_val.replace(" ", "")) if price_val else None
 
     area_match = re.search(r"(\d+)[^\d]+m²", title)
     vymera = int(area_match.group(1)) if area_match else None
 
+    fotky = 0  # nelze spolehlivě zjistit z výpisu
     odkaz = "https://reality.idnes.cz" + a["href"] if a else ""
+
+    if not (city_text and cena and vymera):
+        return None
 
     return {
         "lokalita": city_text,
         "vymera": vymera,
-        "cena": int(price_val.replace(" ", "")) if price_val else None,
+        "cena": cena,
         "okres": okres,
         "kraj": kraj,
         "lat": lat,
@@ -67,25 +80,26 @@ def parse_listing(article):
         "sit_kanalizace": False,
         "sit_elektrina": False,
         "mobilni_dum_vhodne": False,
-        "cislo_parcely": "-",
-        "katastr": "-",
+        "cislo_parcely": None,
+        "katastr": None,
         "uzemni_plan_url": None,
-        "fotky": 0,
+        "fotky": fotky,
         "odkaz": odkaz,
         "zdroj": "reality.idnes.cz",
-        "datum_zverejneni": "2025-04-07"
+        "datum_zverejneni": datetime.today().strftime("%Y-%m-%d")
     }
 
-# Hlavní funkce scraperu
 def scrape_idnes():
     results = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto("https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/")
-        sleep(2)
+        url = "https://reality.idnes.cz/s/prodej/pozemky/stavebni-pozemek/cena-do-1000000/"
+        page.goto(url)
+        sleep(3)
+
         html = page.content()
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, "html.parser")
         articles = soup.select("article")
 
         for article in articles:
@@ -95,3 +109,9 @@ def scrape_idnes():
 
         browser.close()
     return results
+
+if __name__ == "__main__":
+    data = scrape_idnes()
+    with open("idnes_output.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"✅ Uloženo {len(data)} inzerátů do idnes_output.json")
