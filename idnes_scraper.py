@@ -4,37 +4,32 @@ import re
 from geopy.distance import geodesic
 from time import sleep
 
+import json
+
+# načti seznam obcí z JSON souboru (ulož ho do rootu projektu)
+with open("obce.json", encoding="utf-8") as f:
+    OBCE_DATA = json.load(f)
+
+
 NERATOVICE_COORDS = (50.2597, 14.5176)
 
 IGNORE_KEYWORDS = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
 
 def geocode_address(city_text):
-    parts = [x.strip() for x in city_text.split(",")]
-    city = parts[0] if parts else ""
-    okres = ""
-    kraj = ""
+    city_text_clean = city_text.lower().strip()
 
-    coords_map = {
-        "Vimperk": (49.0506, 13.7775),
-        "Prachatice": (49.0126, 13.9982),
-        "Skuhrov": (50.2021, 15.2772),
-        "Jedovnice": (49.3499, 16.7461),
-        "Moravský Krumlov": (49.0481, 16.3129),
-        "Majdalena": (48.9452, 14.9336),
-    }
-    coords = None
-    for key in coords_map:
-        if key.lower() in city_text.lower():
-            coords = coords_map[key]
-            okres = key
-            break
+    for obec in OBCE_DATA:
+        if obec["nazev_obce"].lower() in city_text_clean:
+            lat = float(obec["wgs84_lat"])
+            lon = float(obec["wgs84_lon"])
+            okres = obec.get("nazev_okresu", "")
+            kraj = obec.get("nazev_kraje", "")
+            vzdalenost_km = round(geodesic(NERATOVICE_COORDS, (lat, lon)).km)
+            cesta_autem_min = int(vzdalenost_km * 1.2)
+            return lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min
 
-    if coords:
-        vzdalenost_km = round(geodesic(NERATOVICE_COORDS, coords).km)
-        cesta_autem_min = vzdalenost_km * 1.2  # jednoduchý odhad
-        return coords[0], coords[1], okres, kraj, vzdalenost_km, int(cesta_autem_min)
-    else:
-        return None, None, None, None, None, None
+    return None, None, None, None, None, None
+
 
 def parse_listing(article):
     a = article.select_one("a.c-products__link")
