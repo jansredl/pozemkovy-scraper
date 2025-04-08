@@ -9,19 +9,33 @@ from time import sleep
 NERATOVICE_COORDS = (50.2597, 14.5176)
 IGNORE_KEYWORDS = ["polovina", "spoluvlastnictví", "ideální", "část", "podíl"]
 
-# Načtení dat z obce.json
+# Načti obce.json
 with open("obce.json", encoding="utf-8") as f:
     OBCE = json.load(f)
 
-def find_obec_info(city_text):
-    city_clean = city_text.lower().strip()
-    for obec in OBCE:
-        if "hezkyNazev" in obec and obec["hezkyNazev"].lower() in city_clean:
-            return obec
+def extract_obec_okres(text):
+    """Získá obec a okres z řetězce typu 'Kunovice, okres Uherské Hradiště'"""
+    if not text:
+        return None, None
+    text = text.strip()
+    parts = text.split(", okres")
+    obec = parts[0].strip() if len(parts) > 0 else None
+    okres = parts[1].strip() if len(parts) > 1 else None
+    return obec, okres
+
+def find_obec_info(obec, okres):
+    """Najde obec v obce.json podle názvu obce a okresu"""
+    for o in OBCE:
+        if o["hezkyNazev"].lower() == obec.lower():
+            if okres is None or okres.lower() in o["adresaUradu"]["obec"].lower():
+                return o
     return None
 
 def geocode_from_obce(city_text):
-    info = find_obec_info(city_text)
+    obec, okres = extract_obec_okres(city_text)
+    print(f"🔍 Hledám obec: {obec}, okres: {okres}")
+
+    info = find_obec_info(obec, okres)
     if info:
         lat, lon = info["souradnice"]
         okres = info["adresaUradu"]["obec"]
@@ -29,6 +43,7 @@ def geocode_from_obce(city_text):
         vzdalenost_km = round(geodesic(NERATOVICE_COORDS, (lat, lon)).km)
         cesta_autem_min = int(vzdalenost_km * 1.2)
         return lat, lon, okres, kraj, vzdalenost_km, cesta_autem_min
+    print("⚠️ Obec nebyla nalezena v obce.json")
     return None, None, None, None, None, None
 
 def parse_listing(article):
@@ -76,7 +91,7 @@ def parse_listing(article):
         "fotky": 0,
         "odkaz": odkaz,
         "zdroj": "reality.idnes.cz",
-        "datum_zverejneni": "2025-04-07"
+        "datum_zverejneni": datetime.now().strftime("%Y-%m-%d")
     }
 
 def scrape_idnes():
@@ -89,6 +104,8 @@ def scrape_idnes():
         html = page.content()
         soup = BeautifulSoup(html, "lxml")
         articles = soup.select("article")
+
+        print(f"🔎 Nalezeno článků: {len(articles)}")
 
         for article in articles:
             data = parse_listing(article)
