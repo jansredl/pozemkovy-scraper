@@ -16,7 +16,7 @@ with open("obce.json", encoding="utf-8") as f:
 def find_obec_info(city_text):
     city_clean = city_text.lower().strip()
     for obec in OBCE:
-        if obec["hezkyNazev"].lower() in city_clean:
+        if "hezkyNazev" in obec and obec["hezkyNazev"].lower() in city_clean:
             return obec
     return None
 
